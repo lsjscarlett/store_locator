@@ -10,6 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request
+import os
 
 # Internal modules
 from .database import engine, get_db
@@ -34,10 +35,7 @@ app = FastAPI(title="Store Locator API")
 # 2. Middleware (CORS & Rate Limiter)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=["*"],  # This allows ALL origins, including your Railway URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
