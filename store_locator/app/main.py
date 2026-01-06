@@ -240,7 +240,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db),
     hashed_pw = get_password_hash(user.password)
     new_user = models.User(
         email=user.email,
-        password_hash=hashed_pw,  # FIXED: was models.password_hash
+        password_hash=hashed_pw,
         role_id=role_id,
         is_active=user.is_active
     )

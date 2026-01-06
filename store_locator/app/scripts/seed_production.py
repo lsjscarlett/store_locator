@@ -1,6 +1,6 @@
 import random
-from app.database import SessionLocal, engine
-from app.models import Store, Base
+from ..database import SessionLocal, engine
+from ..models import Store, Base
 from sqlalchemy import text
 
 
