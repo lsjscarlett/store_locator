@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # 1. Your FastAPI App
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/store_db
+      - REDIS_HOST=redis
+      - SECRET_KEY=supersecretkey
+    depends_on:
+      - db
+      - redis
+
+  # 2. PostgreSQL Database
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=store_db
+
+  # 3. Redis Cache
+  redis:
+    image: redis:7
+
+volumes:
+  postgres_data:
