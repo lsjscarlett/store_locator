@@ -94,19 +94,16 @@ def search_stores_logic(
     # Build a clean list of dictionaries so 'distance' is definitely included
     final_results = []
     for s in paginated_results:
-        store_dict = {
+        final_results.append({
             "store_id": s.store_id,
             "name": s.name,
-            "store_type": s.store_type,
             "address_street": s.address_street,
-            "address_city": s.address_city,
-            "address_state": s.address_state,
-            "address_postal_code": s.address_postal_code,
             "latitude": s.latitude,
             "longitude": s.longitude,
+            "store_type": s.store_type,
             "status": s.status,
-            "phone": s.phone,
-            # Add all hours so the frontend can display them
+            # This 'distance' key must match the frontend expectations
+            "distance": getattr(s, 'distance_miles', None),
             "hours_mon": s.hours_mon,
             "hours_tue": s.hours_tue,
             "hours_wed": s.hours_wed,
@@ -114,10 +111,7 @@ def search_stores_logic(
             "hours_fri": s.hours_fri,
             "hours_sat": s.hours_sat,
             "hours_sun": s.hours_sun,
-            # MAP THE DISTANCE HERE:
-            "distance": getattr(s, 'distance_miles', None)
-        }
-        final_results.append(store_dict)
+        })
 
     return {
         "results": final_results,
