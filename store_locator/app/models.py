@@ -20,9 +20,8 @@ role_permissions = Table(
 # --- Service Model ---
 class Service(Base):
     __tablename__ = "services"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    stores = relationship("Store", secondary=store_services, back_populates="services")
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True) # e.g., "wifi", "parking"
 
 
 # --- Store Model ---
@@ -44,7 +43,7 @@ class Store(Base):
     timezone = Column(String, default="America/New_York")
 
     # FIX: lazy="joined" forces data to load immediately
-    services = relationship("Service", secondary=store_services, back_populates="stores", lazy="joined")
+    services = relationship("Service", secondary="store_services", back_populates="stores")
 
     hours_mon = Column(String)
     hours_tue = Column(String)

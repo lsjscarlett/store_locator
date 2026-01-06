@@ -1,72 +1,69 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../api/axios';
 import L from 'leaflet';
 
-// --- CRITICAL FIX: PIN ICONS ---
+// --- PIN ICON ASSET FIX ---
 import icon from 'leaflet/dist/images/marker-icon.png';
-import iconRetina from 'leaflet/dist/images/marker-icon-2x.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
 let DefaultIcon = L.icon({
     iconUrl: icon,
-    iconRetinaUrl: iconRetina,
     shadowUrl: iconShadow,
     iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconAnchor: [12, 41]
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const LocatorPage = () => {
+    // Search & Map State
     const [searchInput, setSearchInput] = useState('');
     const [stores, setStores] = useState([]);
     const [center, setCenter] = useState([40.7128, -74.0060]);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // Pagination & Filter State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalResults, setTotalResults] = useState(0);
+    const [resultsPerPage] = useState(10);
+
     const [selectedType, setSelectedType] = useState('');
-    const [selectedRadius, setSelectedRadius] = useState(50);
-    const [openNowFilter, setOpenNowFilter] = useState(false);
+    const [selectedRadius, setSelectedRadius] = useState(5000); // Nationwide default
+    const [openNow, setOpenNow] = useState(false);
 
-    // Helper to check if a store is open right now for the UI badge
-    const getOpenStatus = (store) => {
-        const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-        const now = new Date();
-        const dayName = days[now.getDay()];
-        const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-        const hours = store[`hours_${dayName}`];
+    // Trigger search whenever page or filters change (except the search text itself)
+    useEffect(() => {
+        if (stores.length > 0) {
+            handleSearch(null, currentPage);
+        }
+    }, [selectedType, selectedRadius, openNow, currentPage]);
 
-        if (!hours || hours.toLowerCase() === 'closed') return { status: 'CLOSED', color: 'text-red-500' };
-        const [open, close] = hours.split('-');
-        if (currentTime >= open && currentTime <= close) return { status: 'OPEN NOW', color: 'text-green-500' };
-        return { status: 'CLOSED', color: 'text-red-500' };
-    };
-
-    const handleSearch = async (e) => {
+    const handleSearch = async (e, page = 1) => {
         if (e) e.preventDefault();
-        setError('');
-        if (!searchInput.trim()) { setError("Please enter a location."); return; }
-
         setLoading(true);
+        setError('');
+
         try {
             const response = await api.post('stores/search', {
-                zip_code: searchInput,
+                zip_code: searchInput || "USA",
+                page: page,
+                limit: resultsPerPage,
                 filters: {
                     radius_miles: parseFloat(selectedRadius),
                     store_type: selectedType || null,
-                    open_now: openNowFilter
+                    open_now: openNow
                 }
             });
 
-            if (response.data.results.length === 0) {
-                setError("No stores found in this area.");
-                setStores([]);
-            } else {
-                setStores(response.data.results);
-                setCenter([response.data.results[0].latitude, response.data.results[0].longitude]);
+            const data = response.data;
+            setStores(data.results);
+            setTotalResults(data.total);
+
+            if (data.results.length > 0 && page === 1) {
+                setCenter([data.results[0].latitude, data.results[0].longitude]);
+            } else if (data.results.length === 0) {
+                setError("No stores found matching these criteria.");
             }
         } catch (err) {
             setError("Location not recognized. Try a zip code.");
@@ -75,59 +72,125 @@ const LocatorPage = () => {
         }
     };
 
+    // UI Helper: Open/Closed Badge
+    const getOpenStatus = (store) => {
+        const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+        const now = new Date();
+        const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+        const hours = store[`hours_${days[now.getDay()]}`];
+
+        if (!hours || hours.toLowerCase() === 'closed') return { text: 'CLOSED', color: 'text-red-500' };
+        const [start, end] = hours.split('-');
+        return (currentTime >= start && currentTime <= end)
+            ? { text: 'OPEN NOW', color: 'text-green-500' }
+            : { text: 'CLOSED', color: 'text-red-500' };
+    };
+
     return (
-        <div className="flex flex-col h-screen text-black bg-white font-sans">
-            <header className="p-4 bg-white shadow-md z-[1001] border-b">
-                <form onSubmit={handleSearch} className="flex gap-4 items-end max-w-6xl mx-auto w-full">
+        <div className="flex flex-col h-screen text-black bg-white">
+            {/* --- HEADER --- */}
+            <header className="p-4 border-b shadow-sm z-[1001] bg-white">
+                <form onSubmit={(e) => { setCurrentPage(1); handleSearch(e, 1); }} className="flex gap-4 items-end max-w-6xl mx-auto">
                     <div className="flex flex-col flex-1">
-                        <label className="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-widest">Location (Zip, City, or State)</label>
+                        <label className="text-[10px] font-bold text-gray-400 mb-1">LOCATION</label>
                         <input
                             type="text"
                             value={searchInput}
                             onChange={(e) => setSearchInput(e.target.value)}
-                            className="border p-2 rounded bg-gray-50 focus:border-blue-500 outline-none"
-                            placeholder="e.g. California or 90210"
+                            className="border p-2 rounded text-sm outline-none focus:border-blue-500"
+                            placeholder="Zip code, City, or State..."
                         />
                     </div>
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-400 mb-1 uppercase">Radius</label>
-                        <select value={selectedRadius} onChange={(e) => setSelectedRadius(e.target.value)} className="border p-2 rounded text-sm bg-gray-50">
-                            <option value="50">50 Miles</option>
-                            <option value="250">250 Miles</option>
-                            <option value="5000">Nationwide</option>
-                        </select>
-                    </div>
-                    <button type="submit" className="bg-blue-600 text-white px-8 py-2 rounded font-bold hover:bg-blue-700 h-[42px]">
+                    <button type="submit" className="bg-blue-600 text-white px-8 py-2 rounded font-bold text-sm h-[42px]">
                         {loading ? '...' : 'SEARCH'}
                     </button>
                 </form>
-                {error && <p className="text-center text-red-500 text-xs font-bold mt-2">{error}</p>}
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                <div className="w-1/3 overflow-y-auto p-4 border-r bg-gray-50">
+                {/* --- SIDEBAR --- */}
+                <div className="w-1/3 overflow-y-auto p-4 bg-gray-50 border-r">
+                    {/* FILTER CONTROLS */}
+                    <div className="mb-4 bg-white p-3 rounded shadow-sm border border-gray-200">
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                            <select
+                                value={selectedType}
+                                onChange={(e) => { setSelectedType(e.target.value); setCurrentPage(1); }}
+                                className="text-xs border p-2 rounded"
+                            >
+                                <option value="">All Store Types</option>
+                                <option value="regular">Regular</option>
+                                <option value="outlet">Outlet</option>
+                                <option value="flagship">Flagship</option>
+                            </select>
+                            <select
+                                value={selectedRadius}
+                                onChange={(e) => { setSelectedRadius(e.target.value); setCurrentPage(1); }}
+                                className="text-xs border p-2 rounded"
+                            >
+                                <option value="50">50 Miles</option>
+                                <option value="250">250 Miles</option>
+                                <option value="5000">Nationwide</option>
+                            </select>
+                        </div>
+                        <label className="text-[10px] font-bold flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={openNow}
+                                onChange={(e) => { setOpenNow(e.target.checked); setCurrentPage(1); }}
+                                className="w-4 h-4"
+                            />
+                            ONLY SHOW OPEN NOW
+                        </label>
+                    </div>
+
+                    {error && <p className="text-red-500 text-xs font-bold mb-4">{error}</p>}
+
+                    {/* STORE LIST */}
                     {stores.map(store => {
-                        const openStatus = getOpenStatus(store);
+                        const status = getOpenStatus(store);
                         return (
-                            <div key={store.store_id} className="mb-4 p-4 bg-white rounded shadow-sm border-l-4 border-blue-500">
+                            <div key={store.store_id} className="mb-3 p-4 bg-white border-l-4 border-blue-500 shadow-sm rounded">
                                 <div className="flex justify-between items-start">
-                                    <h3 className="font-bold text-gray-800">{store.name}</h3>
-                                    <span className="text-[9px] bg-gray-100 px-2 py-1 rounded font-bold uppercase">{store.store_type}</span>
+                                    <h3 className="font-bold text-sm">{store.name}</h3>
+                                    <span className={`text-[9px] font-black ${status.color}`}>{status.text}</span>
                                 </div>
-                                <p className="text-sm text-gray-600">{store.address_street}</p>
-                                <div className="flex justify-between items-center mt-2">
-                                    <p className="text-xs text-blue-600 font-bold">{parseFloat(store.distance).toFixed(1)} miles away</p>
-                                    <p className={`text-[10px] font-black ${openStatus.color}`}>{openStatus.status}</p>
+                                <p className="text-xs text-gray-500 mt-1">{store.address_street}</p>
+                                <div className="flex justify-between mt-2">
+                                    <p className="text-xs text-blue-600 font-bold">{parseFloat(store.distance || 0).toFixed(1)} miles away</p>
+                                    <span className="text-[9px] uppercase font-bold text-gray-400">{store.store_type}</span>
                                 </div>
                             </div>
                         );
                     })}
+
+                    {/* PAGINATION */}
+                    {totalResults > resultsPerPage && (
+                        <div className="mt-6 flex justify-between items-center bg-white p-2 rounded border">
+                            <button
+                                disabled={currentPage === 1}
+                                onClick={() => setCurrentPage(prev => prev - 1)}
+                                className="px-3 py-1 text-xs bg-gray-50 border rounded disabled:opacity-30"
+                            >
+                                Prev
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">Page {currentPage}</span>
+                            <button
+                                disabled={currentPage * resultsPerPage >= totalResults}
+                                onClick={() => setCurrentPage(prev => prev + 1)}
+                                className="px-3 py-1 text-xs bg-gray-50 border rounded disabled:opacity-30"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    )}
                 </div>
 
+                {/* --- MAP --- */}
                 <div className="flex-1 relative z-10">
                     <MapContainer center={center} zoom={11} style={{ height: '100%', width: '100%' }}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                        <RecenterMap center={center} />
+                        <MapRecenter center={center} />
                         {stores.map(store => (
                             <Marker key={store.store_id} position={[store.latitude, store.longitude]}>
                                 <Popup>
@@ -146,9 +209,9 @@ const LocatorPage = () => {
     );
 };
 
-function RecenterMap({ center }) {
+function MapRecenter({ center }) {
     const map = useMap();
-    map.flyTo(center, 12);
+    map.flyTo(center, 12, { duration: 1.5 });
     return null;
 }
 

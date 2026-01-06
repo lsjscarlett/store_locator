@@ -62,35 +62,35 @@ def search_stores_logic(
     # 1. Start with an active stores query
     query = db.query(models.Store).filter(models.Store.status == "active")
 
-    # 2. Filter by Store Type (if the user selected one)
-    if store_type:
-        query = query.filter(models.Store.store_type == store_type)
+    # 2. Filter by Store Type
+    if store_type and store_type.strip() != "":
+        query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
     # 3. Filter by Services
     if services and len(services) > 0:
         for service_name in services:
-            # This assumes a many-to-many relationship with a 'name' field
             query = query.filter(models.Store.services.any(name=service_name))
 
     current_time = datetime.now().strftime("%H:%M")
-
-    # 4. Fetch results to calculate distances
     all_candidates = query.all()
     valid_stores = []
 
+    # 4. Calculate Distance and Filter
     if lat is not None and lon is not None:
         for store in all_candidates:
-            # 1. Check Distance
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
-                # 2. Check "Open Now" if requested
+                # Check "Open Now" if requested
                 if open_now and not is_store_open(store, current_time):
                     continue
 
                 store.distance_miles = dist
                 valid_stores.append(store)
+
+        # --- CRITICAL FIX: SORT BY DISTANCE ---
+        valid_stores.sort(key=lambda x: x.distance_miles)
     else:
-        # If geocoding failed, just return the first 'limit' stores without distance
+        # If no coordinates (e.g., search failed), just return original list
         valid_stores = all_candidates
         for s in valid_stores:
             s.distance_miles = None
@@ -101,9 +101,14 @@ def search_stores_logic(
     end = start + limit
     paginated_results = valid_stores[start:end]
 
-    # 6. Map to the final dictionary format for the Frontend
+    # 6. Map to Frontend format
     final_results = []
     for s in paginated_results:
+        # Handle services list to string mapping safely
+        service_names = []
+        if hasattr(s, 'services') and s.services:
+            service_names = [svc.name for svc in s.services] if isinstance(s.services, list) else []
+
         final_results.append({
             "store_id": s.store_id,
             "name": s.name,
@@ -114,8 +119,7 @@ def search_stores_logic(
             "distance": getattr(s, 'distance_miles', None),
             "store_type": s.store_type,
             "phone": getattr(s, 'phone', 'N/A'),
-            "services": "|".join([svc.name for svc in s.services]) if hasattr(s, 'services') and isinstance(s.services,
-                                                                                                            list) else "",
+            "services": "|".join(service_names),
             "hours_mon": s.hours_mon,
             "hours_tue": s.hours_tue,
             "hours_wed": s.hours_wed,
@@ -132,34 +136,29 @@ def search_stores_logic(
         "total": total
     }
 
-
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 3958.8  # Earth radius in miles
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2 +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    a = (math.sin(dlat / 2)**2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
 
-def is_store_open(store):
-    # 1. Get current day (mon, tue, etc.) and time (HH:MM)
-    now = datetime.now()
-    day_name = now.strftime("%a").lower()  # e.g., "mon"
-    current_time = now.strftime("%H:%M")  # e.g., "14:30"
+def is_store_open(store, current_time_str: str):
+    # current_time_str format: "HH:MM"
+    days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+    # weekday() returns 0 for Monday, but our index needs 0 for Sunday to match the list above
+    day_idx = (datetime.now().weekday() + 1) % 7
+    day_name = days[day_idx]
 
-    # 2. Get hours for today from the store object
-    hours_str = getattr(store, f"hours_{day_name}", "closed")
-
-    if not hours_str or hours_str.lower() == "closed":
+    hours = getattr(store, f"hours_{day_name}", "closed")
+    if not hours or hours.lower() == "closed":
         return False
-
     try:
-        # Split "09:00-17:00" into "09:00" and "17:00"
-        opening, closing = hours_str.split("-")
-        # Direct string comparison works perfectly for 24-hour "HH:MM" format
-        return opening <= current_time <= closing
-    except Exception:
+        start_str, end_str = hours.split("-")
+        return start_str.strip() <= current_time_str <= end_str.strip()
+    except:
         return False
 
