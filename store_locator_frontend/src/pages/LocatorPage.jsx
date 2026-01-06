@@ -30,7 +30,7 @@ const LocatorPage = () => {
     const handleSearch = async (e) => {
         e.preventDefault();
         try {
-            const response = await api.post('/stores/search', {
+            const response = await api.post('stores/search', {
                 zip_code: zipCode,
                 filters: {
                     radius_miles: 5000.0 // Force it to find the store regardless of distance
