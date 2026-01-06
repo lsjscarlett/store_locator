@@ -1,5 +1,4 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import List, Optional, Tuple
 import redis
 import math
@@ -51,47 +50,43 @@ def search_stores_logic(
         page: int,
         limit: int
 ):
+    # 1. Start with an active stores query
     query = db.query(models.Store).filter(models.Store.status == "active")
 
-    # 1. Filter by Store Type
+    # 2. Filter by Store Type (if the user selected one)
     if store_type:
         query = query.filter(models.Store.store_type == store_type)
 
-    # 2. Filter by Services (Iterate and intersect)
-    if services:
+    # 3. Filter by Services
+    if services and len(services) > 0:
         for service_name in services:
+            # This assumes a many-to-many relationship with a 'name' field
             query = query.filter(models.Store.services.any(name=service_name))
 
-    # 3. Get all candidates (before distance calc)
-    # Note: For production with millions of rows, use PostGIS. 
-    # For this scale, fetching all active stores to memory for distance sorting is acceptable.
-    all_stores = query.all()
-
-    # 4. Filter by Distance & Sort
+    # 4. Fetch results to calculate distances
+    all_candidates = query.all()
     valid_stores = []
+
     if lat is not None and lon is not None:
-        for store in all_stores:
+        for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
+            # Only include if within radius
             if dist <= radius_miles:
-                # Attach distance dynamically to the object for reference
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort by distance
-        valid_stores.sort(key=lambda x: x.distance_miles)
+        # Sort by closest distance
+        valid_stores.sort(key=lambda x: getattr(x, 'distance_miles', 99999))
     else:
-        # If no location provided, just return paginated list
-        valid_stores = all_stores
+        valid_stores = all_candidates
 
-    # 5. Pagination
+    # 5. Handle Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     end = start + limit
     paginated_results = valid_stores[start:end]
 
-    # 6. Return Structure (Matches schemas.SearchResponse)
-    # 6. Return Structure (Matches schemas.SearchResponse)
-    # Build a clean list of dictionaries so 'distance' is definitely included
+    # 6. Map to the final dictionary format for the Frontend
     final_results = []
     for s in paginated_results:
         final_results.append({
@@ -100,10 +95,12 @@ def search_stores_logic(
             "address_street": s.address_street,
             "latitude": s.latitude,
             "longitude": s.longitude,
-            "store_type": s.store_type,
             "status": s.status,
-            # This 'distance' key must match the frontend expectations
             "distance": getattr(s, 'distance_miles', None),
+            "store_type": s.store_type,
+            "phone": getattr(s, 'phone', 'N/A'),
+            "services": "|".join([svc.name for svc in s.services]) if hasattr(s, 'services') and isinstance(s.services,
+                                                                                                            list) else "",
             "hours_mon": s.hours_mon,
             "hours_tue": s.hours_tue,
             "hours_wed": s.hours_wed,
@@ -121,15 +118,11 @@ def search_stores_logic(
     }
 
 
-# --- MATH HELPER ---
 def calculate_distance(lat1, lon1, lat2, lon2):
-    # Haversine formula
     R = 3958.8  # Earth radius in miles
-
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) * math.sin(dlat / 2) +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) * math.sin(dlon / 2))
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
