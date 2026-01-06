@@ -60,7 +60,7 @@ def health_check():
 
 # --- 2. PUBLIC SEARCH ---
 @app.post("/api/stores/search")  # Removed response_model temporarily to debug the crash
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 def search_stores(
         payload: schemas.SearchRequest,
         request: Request,
