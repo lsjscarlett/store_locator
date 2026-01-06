@@ -59,15 +59,16 @@ def health_check():
 
 
 # --- 2. PUBLIC SEARCH ---
-@app.post("/api/stores/search")  # Removed response_model temporarily to debug the crash
+# --- 2. PUBLIC SEARCH ---
+@app.post("/api/stores/search")
 @limiter.limit("100/minute")
 def search_stores(
         payload: schemas.SearchRequest,
         request: Request,
         db: Session = Depends(get_db)
 ):
-    # Cache Key Generation
     try:
+        # Cache Key Generation
         payload_str = payload.model_dump_json()
         query_hash = hashlib.md5(payload_str.encode()).hexdigest()
         cache_key = f"search_results:{query_hash}"
@@ -81,17 +82,22 @@ def search_stores(
         # Geocode if needed
         lat, lon = None, None
         if payload.address or payload.zip_code:
-            from app.services.search_logic import get_lat_lon, search_stores_logic
+            # FIX HERE: Changed search_logic to search
+            from app.services.search import get_lat_lon, search_stores_logic
             lat, lon = get_lat_lon(payload.address, payload.zip_code)
 
         # Search Logic
+        # Note: Added explicit keyword arguments to be safe
+        from app.services.search import search_stores_logic
         results = search_stores_logic(
-            db, lat, lon,
-            payload.filters.radius_miles,
-            payload.filters.store_type,
-            payload.filters.services,
-            payload.page,
-            payload.limit
+            db=db,
+            lat=lat,
+            lon=lon,
+            radius_miles=payload.filters.radius_miles,
+            store_type=payload.filters.store_type,
+            services=payload.filters.services,
+            page=payload.page,
+            limit=payload.limit
         )
 
         # Save to Redis (TTL 5 mins)
@@ -101,8 +107,9 @@ def search_stores(
         return results
 
     except Exception as e:
+        import traceback
         print(f"CRITICAL SEARCH ERROR: {str(e)}")
-        # This ensures we return a JSON error instead of a 500 crash
+        print(traceback.format_exc()) # This will show exactly which line failed in Railway Logs
         return {"error": str(e), "results": [], "total": 0, "page": 1, "limit": 10}
 
 
