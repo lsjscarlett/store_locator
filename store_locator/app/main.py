@@ -32,10 +32,16 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Store Locator API")
 
+origins = [
+    "https://storelocatorfrontend-production.up.railway.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+
 # 2. Middleware (CORS & Rate Limiter)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # This allows ALL origins, including your Railway URL
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,7 +59,7 @@ def health_check():
 
 
 # --- 2. PUBLIC SEARCH ---
-@app.post("/api/stores/search", response_model=schemas.SearchResponse)
+@app.post("/api/stores/search")  # Removed response_model temporarily to debug the crash
 @limiter.limit("10/minute")
 def search_stores(
         payload: schemas.SearchRequest,
@@ -61,39 +67,43 @@ def search_stores(
         db: Session = Depends(get_db)
 ):
     # Cache Key Generation
-    payload_str = payload.model_dump_json()
-    query_hash = hashlib.md5(payload_str.encode()).hexdigest()
-    cache_key = f"search_results:{query_hash}"
+    try:
+        payload_str = payload.model_dump_json()
+        query_hash = hashlib.md5(payload_str.encode()).hexdigest()
+        cache_key = f"search_results:{query_hash}"
 
-    # Check Redis
-    if redis_client:
-        cached_data = redis_client.get(cache_key)
-        if cached_data:
-            return json.loads(cached_data)
+        # Check Redis
+        if redis_client:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
 
-    # Geocode if needed
-    lat, lon = None, None
-    if payload.address or payload.zip_code:
-        lat, lon = get_lat_lon(payload.address, payload.zip_code)
+        # Geocode if needed
+        lat, lon = None, None
+        if payload.address or payload.zip_code:
+            from app.services.search_logic import get_lat_lon, search_stores_logic
+            lat, lon = get_lat_lon(payload.address, payload.zip_code)
 
-    # Search Logic
-    results = search_stores_logic(
-        db, lat, lon,
-        payload.filters.radius_miles,
-        payload.filters.store_type,
-        payload.filters.services,
-        payload.page,
-        payload.limit
-    )
+        # Search Logic
+        results = search_stores_logic(
+            db, lat, lon,
+            payload.filters.radius_miles,
+            payload.filters.store_type,
+            payload.filters.services,
+            payload.page,
+            payload.limit
+        )
 
-    # Construct Response
-    # Note: search_stores_logic returns the dictionary structure we need
+        # Save to Redis (TTL 5 mins)
+        if redis_client and results:
+            redis_client.setex(cache_key, 300, json.dumps(results, default=str))
 
-    # Save to Redis (TTL 5 mins)
-    if redis_client:
-        redis_client.setex(cache_key, 300, json.dumps(results, default=str))
+        return results
 
-    return results
+    except Exception as e:
+        print(f"CRITICAL SEARCH ERROR: {str(e)}")
+        # This ensures we return a JSON error instead of a 500 crash
+        return {"error": str(e), "results": [], "total": 0, "page": 1, "limit": 10}
 
 
 # --- 3. AUTHENTICATION ---
