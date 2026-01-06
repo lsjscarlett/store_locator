@@ -23,21 +23,32 @@ except Exception as e:
 
 # --- GEOCODER HELPER ---
 def get_lat_lon(address: Optional[str], zip_code: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
-    geolocator = Nominatim(user_agent="store_locator_app")
-    search_query = ""
+    # Use a unique user_agent to avoid being blocked by Nominatim
+    geolocator = Nominatim(user_agent="my_store_locator_v2")
+
+    # Try searching for Zip Code specifically in the USA context
+    query = ""
     if address:
-        search_query += address
+        query += f"{address}, "
     if zip_code:
-        search_query += f" {zip_code}"
+        query += f"{zip_code}, USA"
 
     try:
-        location = geolocator.geocode(search_query, timeout=5)
+        location = geolocator.geocode(query, timeout=10)
         if location:
+            print(f"DEBUG: Geocoded to {location.latitude}, {location.longitude}")
             return location.latitude, location.longitude
-    except GeocoderTimedOut:
-        return None, None
-    return None, None
 
+        # Backup: Try just the zip code if the full query fails
+        if zip_code:
+            location = geolocator.geocode({"postalcode": zip_code, "country": "USA"}, timeout=10)
+            if location:
+                return location.latitude, location.longitude
+
+    except Exception as e:
+        print(f"Geocoding Error: {e}")
+
+    return None, None
 
 # --- SEARCH LOGIC (Fixed Signature) ---
 def search_stores_logic(
@@ -70,15 +81,16 @@ def search_stores_logic(
     if lat is not None and lon is not None:
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
-            # Only include if within radius
+            # Distance filter
             if dist <= radius_miles:
                 store.distance_miles = dist
                 valid_stores.append(store)
-
-        # Sort by closest distance
-        valid_stores.sort(key=lambda x: getattr(x, 'distance_miles', 99999))
+        valid_stores.sort(key=lambda x: getattr(x, 'distance_miles', 9999))
     else:
+        # If geocoding failed, just return the first 'limit' stores without distance
         valid_stores = all_candidates
+        for s in valid_stores:
+            s.distance_miles = None
 
     # 5. Handle Pagination
     total = len(valid_stores)
