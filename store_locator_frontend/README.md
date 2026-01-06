@@ -1,16 +1,23 @@
-# React + Vite
+# 📍 Store Locator - Frontend (React)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the user interface for the Store Locator application, built with **React**, **Vite**, and **Leaflet.js**. It provides an interactive map interface for customers and a secure management dashboard for administrators.
 
-Currently, two official plugins are available:
+## 🚀 Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Framework:** React 18 (Vite)
+- **Mapping:** Leaflet & React-Leaflet
+- **Styling:** Tailwind CSS (or your chosen CSS framework)
+- **API Client:** Axios
+- **Icons:** Lucide React / FontAwesome
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠 Setup & Installation
 
-## Expanding the ESLint configuration
+### 1. Prerequisites
+- Node.js (v16 or higher)
+- npm or yarn
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 2. Install Dependencies
+```bash
+npm install

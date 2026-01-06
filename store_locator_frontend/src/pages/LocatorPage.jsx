@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../api/axios';
 import L from 'leaflet';
+import { Link } from "react-router-dom"; // ALREADY ADDED
 
 // Fix for default Leaflet icon
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -22,6 +23,14 @@ function RecenterMap({ center }) {
     return null;
 }
 
+// NEW: Helper function to get today's hours from the store data
+const getTodayHours = (store) => {
+    const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const today = days[new Date().getDay()];
+    const hoursField = `hours_${today}`;
+    return store[hoursField] || "Contact for hours";
+};
+
 const LocatorPage = () => {
     const [zipCode, setZipCode] = useState('');
     const [stores, setStores] = useState([]);
@@ -33,7 +42,7 @@ const LocatorPage = () => {
             const response = await api.post('stores/search', {
                 zip_code: zipCode,
                 filters: {
-                    radius_miles: 5000.0 // Force it to find the store regardless of distance
+                    radius_miles: 5000.0
                 }
             });
 
@@ -41,10 +50,9 @@ const LocatorPage = () => {
             setStores(results);
 
             if (results.length > 0) {
-                // Set center to the first store found
                 setCenter([results[0].latitude, results[0].longitude]);
             } else {
-                alert("No stores found within 50 miles of this location.");
+                alert("No stores found.");
             }
         } catch (error) {
             console.error("Search failed:", error);
@@ -55,11 +63,18 @@ const LocatorPage = () => {
     return (
         <div className="flex flex-col h-screen text-black">
             <header className="p-4 bg-white shadow-md z-[1001] flex justify-between items-center">
-                <h1 className="text-xl font-bold text-blue-600">Store Locator</h1>
+                <div className="flex items-center gap-4">
+                    <h1 className="text-xl font-bold text-blue-600">Store Locator</h1>
+                    {/* NEW: Admin Login Link */}
+                    <Link to="/login" className="text-sm text-gray-500 hover:text-blue-600 font-medium ml-4">
+                        Admin Login
+                    </Link>
+                </div>
+
                 <form onSubmit={handleSearch} className="flex gap-2">
                     <input
                         type="text"
-                        placeholder="Zip Code (e.g. 10036)"
+                        placeholder="Zip Code..."
                         value={zipCode}
                         onChange={(e) => setZipCode(e.target.value)}
                         className="border p-2 rounded w-48 bg-white text-black"
@@ -77,7 +92,18 @@ const LocatorPage = () => {
                             <div key={store.store_id} className="mb-4 p-4 bg-white rounded shadow border-l-4 border-blue-500">
                                 <h3 className="font-bold text-lg">{store.name}</h3>
                                 <p className="text-sm text-gray-600">{store.address_street}</p>
-                                <p className="text-xs text-blue-400 mt-2 font-semibold uppercase">{store.store_type}</p>
+
+                                {/* NEW: Displaying Distance and Hours */}
+                                <div className="mt-2 flex flex-col gap-1">
+                                    <p className="text-xs text-blue-600 font-bold">
+                                        {store.distance ? `${store.distance.toFixed(1)} miles away` : 'Calculating distance...'}
+                                    </p>
+                                    <p className="text-xs text-gray-500 italic">
+                                        Today's Hours: {getTodayHours(store)}
+                                    </p>
+                                </div>
+
+                                <p className="text-[10px] text-blue-400 mt-2 font-semibold uppercase tracking-wider">{store.store_type}</p>
                             </div>
                         ))
                     )}
@@ -92,7 +118,8 @@ const LocatorPage = () => {
                                 <Popup>
                                     <div className="font-sans">
                                         <b className="text-blue-600">{store.name}</b><br/>
-                                        {store.address_street}
+                                        {store.address_street}<br/>
+                                        <span className="text-xs text-gray-500">{getTodayHours(store)}</span>
                                     </div>
                                 </Popup>
                             </Marker>
