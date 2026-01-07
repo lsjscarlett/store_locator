@@ -1,13 +1,15 @@
+# app/services/search.py
+
+from sqlalchemy.orm import Session
+from typing import List, Optional, Tuple
 import redis
 import math
-from typing import List, Optional, Tuple
-from sqlalchemy.orm import Session
 from app import models
 from app.config import settings
 from geopy.geocoders import Nominatim
 from datetime import datetime
 
-# --- 1. REDIS EXPORT (Required for main.py) ---
+# --- REDIS SETUP ---
 try:
     redis_client = redis.Redis(
         host=settings.REDIS_HOST,
@@ -15,16 +17,14 @@ try:
         db=0,
         decode_responses=True
     )
-except Exception as e:
-    print(f"Redis not available: {e}")
+except Exception:
     redis_client = None
 
 
-# --- 2. GEOCODER HELPER ---
+# --- GEOCODER HELPER ---
 def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
-    geolocator = Nominatim(user_agent="store_locator_final_v6")
+    geolocator = Nominatim(user_agent="my_locator_final_v7")
     try:
-        # Search specifically within USA
         location = geolocator.geocode(f"{query}, USA", timeout=10)
         if location:
             return location.latitude, location.longitude
@@ -33,7 +33,7 @@ def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 
-# --- 3. SEARCH LOGIC (Signature must match main.py exactly) ---
+# --- SEARCH LOGIC ---
 def search_stores_logic(
         db: Session,
         lat: Optional[float],
@@ -45,29 +45,29 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
-    # 1. Base Query
+    # 1. Start Query - Only look for active stores
     query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # 2. Type Filter
+    # 2. Store Type Filter
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
-    # 3. SERVICES FILTER FIX:
-    # Only filter if the list is NOT empty. If it's empty, ignore it.
+    # 3. SERVICES FILTER (THE KILLER FIX)
+    # If services is empty [], we MUST NOT filter by it or results will be 0
     if services and len(services) > 0:
         for svc_name in services:
             query = query.filter(models.Store.services.any(models.Service.name.ilike(svc_name)))
 
     all_candidates = query.all()
 
-    # Fallback: if 'active' filter is too strict, get all
+    # Fallback: If for some reason 'active' filter returns nothing, get all stores
     if not all_candidates:
         all_candidates = db.query(models.Store).all()
 
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # 4. Proximity / Nationwide
+    # 4. Proximity & Nationwide Logic
     if lat is None or lon is None or radius_miles >= 5000:
         valid_stores = all_candidates
         for s in valid_stores:
@@ -81,6 +81,7 @@ def search_stores_logic(
                 store.distance_miles = dist
                 valid_stores.append(store)
 
+        # Sort closest first
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
     # 5. Pagination
@@ -88,6 +89,7 @@ def search_stores_logic(
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
+    # 6. Response Mapping
     return {
         "results": [
             {
