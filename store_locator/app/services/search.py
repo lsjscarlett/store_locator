@@ -48,6 +48,7 @@ def search_stores_logic(
         lon: Optional[float],
         radius_miles: float,
         store_type: Optional[str],
+        services: Optional[List[str]],
         page: int,
         limit: int,
         open_now=False
@@ -72,20 +73,23 @@ def search_stores_logic(
 
     # 3. Distance & Nationwide Logic
     # If Nationwide (5000) or geocoding failed, skip the math and return all
-    if lat is None or lon is None or radius_miles >= 5000:
+    is_nationwide = radius_miles >= 5000
+
+    if lat is None or lon is None or is_nationwide:
         valid_stores = all_candidates
         for s in valid_stores:
             s.distance_miles = None
     else:
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
+            # Use the actual radius_miles passed from payload
             if dist <= radius_miles:
                 if open_now and not is_store_open(store, current_time):
                     continue
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort by proximity
+        # Only sort if we have distances
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
     # 4. Pagination

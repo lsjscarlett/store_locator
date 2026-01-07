@@ -81,10 +81,10 @@ def search_stores(
 
         # Geocode if needed
         lat, lon = None, None
-        if payload.address or payload.zip_code:
-            # FIX HERE: Changed search_logic to search
-            from app.services.search import get_lat_lon, search_stores_logic
-            lat, lon = get_lat_lon(payload.address, payload.zip_code)
+        search_query = payload.zip_code or payload.address
+        if search_query:
+            from app.services.search import get_lat_lon
+            lat, lon = get_lat_lon(search_query)  # Pass ONLY the search_query string
 
         # Search Logic
         # Note: Added explicit keyword arguments to be safe
@@ -109,7 +109,7 @@ def search_stores(
     except Exception as e:
         import traceback
         print(f"CRITICAL SEARCH ERROR: {str(e)}")
-        print(traceback.format_exc()) # This will show exactly which line failed in Railway Logs
+        print(traceback.format_exc())  # This will show exactly which line failed in Railway Logs
         return {"error": str(e), "results": [], "total": 0, "page": 1, "limit": 10}
 
 
