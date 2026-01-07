@@ -1,19 +1,22 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
-import LoginPage from "./pages/LoginPage";
-import LocatorPage from "./pages/LocatorPage";
-import AdminDashboard from "./pages/AdminDashboard"; // Import the real dashboard
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import LocatorPage from './pages/LocatorPage';
+import LoginPage from './pages/LoginPage';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
   return (
     <Router>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<LocatorPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-        </Routes>
-      </AuthProvider>
+      <Routes>
+        {/* Public Map */}
+        <Route path="/" element={<LocatorPage />} />
+
+        {/* Login Screen */}
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Admin Dashboard */}
+        <Route path="/admin" element={<AdminDashboard />} />
+      </Routes>
     </Router>
   );
 }
