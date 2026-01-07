@@ -1,63 +1,68 @@
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
-from typing import List, Optional, Tuple
+import redis
 import math
+from typing import List, Optional, Tuple
+from sqlalchemy.orm import Session
 from app import models
+from app.config import settings  # Ensure your config has REDIS_HOST/PORT
 from geopy.geocoders import Nominatim
 from datetime import datetime
+
+# --- REDIS SETUP (Required for main.py) ---
+try:
+    # If you aren't using Redis, this client will just be None
+    # and the app won't crash.
+    redis_client = redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=0,
+        decode_responses=True
+    )
+except Exception as e:
+    print(f"Redis not available: {e}")
+    redis_client = None
 
 
 # --- GEOCODER HELPER ---
 def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
-    # user_agent should be unique
-    geolocator = Nominatim(user_agent="store_locator_final_check")
+    geolocator = Nominatim(user_agent="store_locator_final_v5")
     try:
-        # Strategy: Search within USA for accuracy
         location = geolocator.geocode(f"{query}, USA", timeout=10)
         if location:
             return location.latitude, location.longitude
-    except Exception as e:
-        print(f"Geocoding Error: {e}")
+    except Exception:
+        pass
     return None, None
 
 
 # --- SEARCH LOGIC ---
-# Signature MUST match main.py: (db, lat, lon, radius_miles, store_type, services, page, limit)
 def search_stores_logic(
         db: Session,
         lat: Optional[float],
         lon: Optional[float],
         radius_miles: float,
         store_type: Optional[str],
-        services: Optional[List[str]],  # Added back to match main.py
+        services: Optional[List[str]],
         page: int,
         limit: int,
         open_now: bool = False
 ):
-    # 1. Base Query: Start with active stores
-    # .ilike handles case sensitivity (Active vs active)
+    # 1. Start with active stores
     query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # 2. Store Type Filter
+    # 2. Type Filter
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
-    # 3. Services Filter (Optional)
-    if services and len(services) > 0:
-        for svc_name in services:
-            query = query.filter(models.Store.services.any(models.Service.name.ilike(svc_name)))
-
     all_candidates = query.all()
 
-    # Fallback: If no 'active' stores found, fetch all as a safety net
+    # Fallback if no active stores found
     if not all_candidates:
         all_candidates = db.query(models.Store).all()
 
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # 4. Proximity & Nationwide Logic
-    # If radius is 5000 or geocoder failed, return everything (Nationwide)
+    # 3. Proximity / Nationwide
     if lat is None or lon is None or radius_miles >= 5000:
         valid_stores = all_candidates
         for s in valid_stores:
@@ -66,21 +71,18 @@ def search_stores_logic(
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
-                # Optional Open Now Filter
                 if open_now and not is_store_open(store, current_time):
                     continue
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort closest first
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 5. Pagination
+    # 4. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
-    # 6. Response Mapping
     return {
         "results": [
             {
@@ -98,9 +100,7 @@ def search_stores_logic(
                 "hours_fri": s.hours_fri,
                 "hours_sat": s.hours_sat,
                 "hours_sun": s.hours_sun,
-                "services": [svc.name for svc in s.services] if s.services else []
-            }
-            for s in paginated
+            } for s in paginated
         ],
         "total": total,
         "page": page,
@@ -109,7 +109,7 @@ def search_stores_logic(
 
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 3958.8  # Miles
+    R = 3958.8
     dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
