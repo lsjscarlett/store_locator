@@ -72,24 +72,25 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
-    # Base query: Get active stores
-    query = db.query(models.Store).filter(models.Store.status.ilike("active"))
+    # 1. THE EMERGENCY FIX: Remove the .filter(status.ilike("active"))
+    # This ensures that even if your data has no status, it SHOWS UP.
+    query = db.query(models.Store)
 
+    # 2. Relaxed Type Filter
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
     all_candidates = query.all()
-    if not all_candidates:
-        all_candidates = db.query(models.Store).all()
+
+    # Debug print for Railway logs
+    print(f"DEBUG: Found {len(all_candidates)} total stores in DB.")
 
     valid_stores = []
-    # Get current time once for comparison
     current_time = datetime.now().strftime("%H:%M")
 
-    # Nationwide / Proximity Logic
+    # 3. Logic for Nationwide vs Proximity
     if lat is None or lon is None or radius_miles >= 5000:
         for s in all_candidates:
-            # Still apply "Open Now" filter even in Nationwide mode if requested
             if open_now and not is_store_open(s, current_time):
                 continue
             s.distance_miles = None
@@ -105,28 +106,29 @@ def search_stores_logic(
 
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # Pagination
+    # 4. Pagination & Final Response
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
-    # Mapping
-    results = []
-    for s in paginated:
-        results.append({
-            "store_id": s.store_id,
-            "name": s.name,
-            "address_street": s.address_street,
-            "latitude": s.latitude,
-            "longitude": s.longitude,
-            "distance": getattr(s, 'distance_miles', None),
-            "store_type": s.store_type,
-            "hours_mon": s.hours_mon,
-            "is_open": is_store_open(s, current_time)  # Added for frontend status
-        })
-
-    return {"results": results, "total": total, "page": page, "limit": limit}
-
+    return {
+        "results": [
+            {
+                "store_id": s.store_id,
+                "name": s.name,
+                "address_street": s.address_street,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "distance": getattr(s, 'distance_miles', None),
+                "store_type": s.store_type,
+                "hours_mon": s.hours_mon,
+                "is_open": is_store_open(s, current_time)
+            } for s in paginated
+        ],
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 3958.8
