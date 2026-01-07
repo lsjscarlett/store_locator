@@ -3,25 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 
 const AdminDashboard = () => {
-    const [activeTab, setActiveTab] = useState('stores'); // 'stores' or 'users'
+    const [activeTab, setActiveTab] = useState('stores');
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    // Pagination State
+    // Pagination
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const LIMIT = 10;
 
-    // CSV Upload State
+    // CSV Upload
     const [uploading, setUploading] = useState(false);
 
-    // Create User Modal State
+    // Create User Modal
     const [showUserModal, setShowUserModal] = useState(false);
-    const [newUser, setNewUser] = useState({ email: '', password: '', role_id: 2 }); // Default to Marketer
+    const [newUser, setNewUser] = useState({ email: '', password: '', role_id: 2 });
 
     const navigate = useNavigate();
 
-    // Check Auth & Fetch Data
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -34,30 +33,21 @@ const AdminDashboard = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
-
             if (activeTab === 'users') {
-                // Fetch Users (No pagination for now, usually list is small)
-                const res = await api.get('/admin/users', { headers });
+                const res = await api.get('/admin/users');
                 setItems(res.data);
             } else {
-                // Fetch Stores with Pagination
-                // We use the search endpoint to "List All" by setting radius to Nationwide (5000)
                 const res = await api.post('/stores/search', {
                     page: page,
                     limit: LIMIT,
                     filters: { radius_miles: 5000, store_type: null }
                 });
                 setItems(res.data.results);
-                // Calculate total pages based on total results
                 setTotalPages(Math.ceil(res.data.total / LIMIT));
             }
         } catch (err) {
             console.error(err);
-            if (err.response?.status === 401) {
-                navigate('/login');
-            }
+            if (err.response?.status === 401) navigate('/login');
         } finally {
             setLoading(false);
         }
@@ -66,16 +56,11 @@ const AdminDashboard = () => {
     const handleDelete = async (id) => {
         if (!window.confirm("Are you sure? This cannot be undone.")) return;
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
             const endpoint = activeTab === 'stores' ? `/admin/stores/${id}` : `/admin/users/${id}`;
-
-            await api.delete(endpoint, { headers });
-
-            // Refresh Data
+            await api.delete(endpoint);
             fetchData();
         } catch (err) {
-            alert("Failed to delete. You might not have permission.");
+            alert("Failed to delete. Check permissions.");
         }
     };
 
@@ -88,15 +73,11 @@ const AdminDashboard = () => {
         formData.append('file', file);
 
         try {
-            const token = localStorage.getItem('token');
             await api.post('/admin/stores/import', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                    Authorization: `Bearer ${token}`
-                }
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
             alert("Import Successful!");
-            fetchData(); // Refresh list
+            fetchData();
         } catch (err) {
             alert("Import Failed. Check CSV format.");
         } finally {
@@ -107,14 +88,12 @@ const AdminDashboard = () => {
     const handleCreateUser = async (e) => {
         e.preventDefault();
         try {
-            const token = localStorage.getItem('token');
             await api.post('/admin/users', {
                 email: newUser.email,
                 password: newUser.password,
                 role_id: parseInt(newUser.role_id),
                 is_active: true
-            }, { headers: { Authorization: `Bearer ${token}` } });
-
+            });
             setShowUserModal(false);
             setNewUser({ email: '', password: '', role_id: 2 });
             fetchData();
@@ -144,7 +123,7 @@ const AdminDashboard = () => {
             </nav>
 
             <div className="max-w-7xl mx-auto p-6">
-                {/* Controls Header */}
+                {/* Controls */}
                 <div className="flex justify-between items-end mb-6">
                     <div className="flex gap-6 border-b border-gray-200">
                         <button
@@ -161,7 +140,6 @@ const AdminDashboard = () => {
                         </button>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex gap-2">
                         {activeTab === 'stores' ? (
                             <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition">
@@ -179,7 +157,7 @@ const AdminDashboard = () => {
                     </div>
                 </div>
 
-                {/* Data Table */}
+                {/* Table */}
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                     {loading ? (
                         <div className="p-8 text-center text-gray-400 text-sm font-bold animate-pulse">Loading Data...</div>
@@ -188,7 +166,7 @@ const AdminDashboard = () => {
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-gray-50 text-gray-400 border-b border-gray-100">
                                     <tr>
-                                        <th className="p-4 text-[10px] uppercase font-bold tracking-wider">{activeTab === 'stores' ? 'Store Name / ID' : 'Email Address'}</th>
+                                        <th className="p-4 text-[10px] uppercase font-bold tracking-wider">{activeTab === 'stores' ? 'Name / ID' : 'Email'}</th>
                                         <th className="p-4 text-[10px] uppercase font-bold tracking-wider">{activeTab === 'stores' ? 'Location' : 'Role'}</th>
                                         <th className="p-4 text-[10px] uppercase font-bold tracking-wider">Status</th>
                                         <th className="p-4 text-[10px] uppercase font-bold tracking-wider text-right">Actions</th>
@@ -205,7 +183,6 @@ const AdminDashboard = () => {
                                                 {activeTab === 'stores' ? (
                                                     <>{item.address_city}, {item.address_state}</>
                                                 ) : (
-                                                    // Simple Role Display logic
                                                     <span className="bg-gray-100 px-2 py-1 rounded text-xs font-bold uppercase text-gray-500">
                                                         {item.role_id === 1 ? 'Admin' : item.role_id === 2 ? 'Marketer' : 'Viewer'}
                                                     </span>
@@ -227,8 +204,7 @@ const AdminDashboard = () => {
                                     ))}
                                 </tbody>
                             </table>
-
-                            {/* Pagination Controls (Only for Stores) */}
+                            {/* Pagination Controls */}
                             {activeTab === 'stores' && totalPages > 1 && (
                                 <div className="p-4 border-t flex justify-between items-center bg-gray-50">
                                     <button
@@ -253,7 +229,7 @@ const AdminDashboard = () => {
                 </div>
             </div>
 
-            {/* CREATE USER MODAL */}
+            {/* CREATE USER MODAL - Fixed Classes */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]">
                     <div className="bg-white p-6 rounded-lg shadow-xl w-96">
@@ -261,13 +237,33 @@ const AdminDashboard = () => {
                         <form onSubmit={handleCreateUser} className="flex flex-col gap-3">
                             <input
                                 type="email" placeholder="Email" required
-                                className="p-2 border rounded text-sm"
+                                className="p-2 border rounded text-sm w-full"
                                 value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})}
                             />
                             <input
                                 type="password" placeholder="Password" required
-                                className="p-2 border rounded text-sm"
+                                className="p-2 border rounded text-sm w-full"
                                 value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})}
                             />
                             <select
-                                className="p-2 border rounded
+                                className="p-2 border rounded text-sm bg-white w-full"
+                                value={newUser.role_id}
+                                onChange={e => setNewUser({...newUser, role_id: e.target.value})}
+                            >
+                                <option value="1">Admin (Full Access)</option>
+                                <option value="2">Marketer (Store Access)</option>
+                                <option value="3">Viewer (Read Only)</option>
+                            </select>
+                            <div className="flex gap-2 mt-2">
+                                <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 p-2 bg-gray-200 rounded font-bold text-xs">Cancel</button>
+                                <button type="submit" className="flex-1 p-2 bg-blue-600 text-white rounded font-bold text-xs">Create</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default AdminDashboard;
