@@ -25,27 +25,21 @@ except Exception as e:
 
 
 # --- GEOCODER HELPER ---
-def get_lat_lon(address: Optional[str], zip_code: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
-    geolocator = Nominatim(user_agent="my_locator_final_v3")
-
-    # Clean the input
-    query = f"{zip_code or address}"
-    if not query: return None, None
-
+def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
+    geolocator = Nominatim(user_agent="my_locator_final_v4")
     try:
-        # Strategy 1: Search as a structured US query (Best for Zip/State/City)
+        # Strategy 1: Direct Search (Strict)
         location = geolocator.geocode({"postalcode": query, "country": "USA"}, timeout=10)
 
-        # Strategy 2: If that fails, try a free-form US search (Best for "California" or "123 Main St")
+        # Strategy 2: Relaxed Search (Fallback for 10036 types)
         if not location:
             location = geolocator.geocode(f"{query}, USA", timeout=10)
 
         if location:
             return location.latitude, location.longitude
-    except Exception as e:
-        print(f"Geocoding error: {e}")
+    except Exception:
+        pass
     return None, None
-
 
 # --- SEARCH LOGIC (Fixed Signature) ---
 def search_stores_logic(
