@@ -1,39 +1,53 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { Link } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import api from '../api/axios';
 import L from 'leaflet';
 
-// Leaflet Icon Fix for Production
-import icon from 'leaflet/dist/images/marker-icon.png';
+// --- ICONS ---
+import iconBlue from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
 let DefaultIcon = L.icon({
-    iconUrl: icon,
+    iconUrl: iconBlue,
     shadowUrl: iconShadow,
     iconSize: [25, 41],
-    iconAnchor: [12, 41]
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34]
 });
+
+let HoverIcon = L.icon({
+    iconUrl: iconBlue,
+    shadowUrl: iconShadow,
+    iconSize: [40, 65],
+    iconAnchor: [20, 65],
+    popupAnchor: [1, -34],
+    className: 'hue-rotate-180'
+});
+
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const LocatorPage = () => {
     const [searchInput, setSearchInput] = useState('');
     const [stores, setStores] = useState([]);
-    const [center, setCenter] = useState([40.7128, -74.0060]);
+    const [center, setCenter] = useState([39.8283, -98.5795]);
+    const [zoom, setZoom] = useState(4);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    const [hoveredStoreId, setHoveredStoreId] = useState(null);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [totalResults, setTotalResults] = useState(0);
     const [resultsPerPage] = useState(10);
 
     const [selectedType, setSelectedType] = useState('');
-    const [selectedRadius, setSelectedRadius] = useState(5000); // Default to Nationwide for testing
+    const [selectedRadius, setSelectedRadius] = useState(10);
     const [openNow, setOpenNow] = useState(false);
 
     useEffect(() => {
-        if (stores.length > 0 || searchInput.trim()) {
-            performSearch(null, currentPage);
-        }
+        if (stores.length === 0) performSearch(null, 1);
     }, [selectedType, selectedRadius, openNow, currentPage]);
 
     const performSearch = async (e, page = 1) => {
@@ -43,7 +57,7 @@ const LocatorPage = () => {
 
         try {
             const response = await api.post('stores/search', {
-                zip_code: searchInput || "USA",
+                zip_code: searchInput || null,
                 page: page,
                 limit: resultsPerPage,
                 filters: {
@@ -58,38 +72,42 @@ const LocatorPage = () => {
 
             if (response.data.results.length > 0 && page === 1) {
                 setCenter([response.data.results[0].latitude, response.data.results[0].longitude]);
+                setZoom(13);
             } else if (response.data.results.length === 0) {
-                setError("No stores found. Try selecting 'Nationwide' and 'All Types'.");
+                // --- THE FIX: SMART HINTING ---
+                if (searchInput && !searchInput.match(/\d{5}/) && !searchInput.includes(',')) {
+                    setError("Address too vague. Try adding a City or Zip Code (e.g., 'Elm St, Jersey City').");
+                } else {
+                    setError("No stores found matching your criteria.");
+                }
             }
         } catch (err) {
-            setError("Location not found. Try a zip code like 10036.");
+            setError("Search failed. Please try again.");
         } finally {
             setLoading(false);
         }
     };
 
-    const getOpenStatus = (store) => {
+    const getHoursDisplay = (store) => {
         const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-        const now = new Date();
-        const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
-        const dayKey = `hours_${days[now.getDay()]}`;
-        const hours = store[dayKey];
+        const dayName = days[new Date().getDay()];
+        const hours = store[`hours_${dayName}`];
 
-        if (!hours || hours.toLowerCase() === 'closed') return { text: 'CLOSED', color: 'text-red-500' };
-        try {
-            const [start, end] = hours.split('-');
-            return (currentTime >= start.trim() && currentTime <= end.trim())
-                ? { text: 'OPEN', color: 'text-green-600' }
-                : { text: 'CLOSED', color: 'text-red-500' };
-        } catch { return { text: 'CLOSED', color: 'text-red-500' }; }
+        if (!hours || hours.toLowerCase() === 'closed') return "Closed Today";
+        return `Today: ${hours}`;
     };
 
     return (
         <div className="flex flex-col h-screen text-black bg-white font-sans">
-            {/* --- BRAND TITLE & SEARCH --- */}
             <header className="p-4 border-b shadow-sm z-[1001] bg-white">
                 <div className="max-w-6xl mx-auto flex flex-col gap-4">
-                    <h1 className="text-2xl font-black text-blue-600 tracking-tighter">STORE LOCATOR</h1>
+                    <div className="flex justify-between items-center">
+                        <h1 className="text-2xl font-black text-blue-600 tracking-tighter">STORE LOCATOR</h1>
+                        <Link to="/login" className="text-xs font-bold text-gray-400 hover:text-blue-600 uppercase no-underline">
+                            Admin Login
+                        </Link>
+                    </div>
+
                     <form onSubmit={(e) => { setCurrentPage(1); performSearch(e, 1); }} className="flex gap-4 items-end w-full">
                         <div className="flex flex-col flex-1">
                             <label className="text-[10px] font-bold text-gray-400 mb-1 uppercase">Enter Zip, City, or State</label>
@@ -98,27 +116,28 @@ const LocatorPage = () => {
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
                                 className="border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-gray-50"
-                                placeholder="e.g. 10036 or California"
+                                // UPDATED PLACEHOLDER
+                                placeholder="e.g. 198 Elm St, Jersey City OR 07305"
                             />
                         </div>
                         <button type="submit" className="bg-blue-600 text-white px-10 py-2 rounded font-bold text-sm h-[42px] hover:bg-blue-700">
-                            {loading ? '...' : 'FIND STORES'}
+                            {loading ? '...' : 'FIND'}
                         </button>
                     </form>
                 </div>
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                {/* --- SIDEBAR --- */}
                 <div className="w-1/3 overflow-y-auto p-4 bg-gray-50 border-r flex flex-col">
                     <div className="mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
                         <div className="grid grid-cols-2 gap-3 mb-4">
                             <div>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Radius</label>
                                 <select value={selectedRadius} onChange={(e) => { setSelectedRadius(e.target.value); setCurrentPage(1); }} className="w-full text-xs border p-2 rounded bg-gray-50">
-                                    <option value="15">15 Miles</option>
+                                    <option value="10">10 Miles</option>
+                                    <option value="25">25 Miles</option>
                                     <option value="50">50 Miles</option>
-                                    <option value="5000">Nationwide</option>
+                                    <option value="100">100 Miles</option>
                                 </select>
                             </div>
                             <div>
@@ -138,25 +157,56 @@ const LocatorPage = () => {
                         </label>
                     </div>
 
-                    {error && <p className="text-red-600 p-2 text-xs font-bold mb-4">{error}</p>}
+                    {/* ERROR MESSAGE DISPLAY */}
+                    {error && (
+                        <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-4 rounded shadow-sm">
+                            <p className="text-red-700 text-xs font-bold">{error}</p>
+                        </div>
+                    )}
 
                     <div className="flex-1">
-                        {stores.map(store => {
-                            const status = getOpenStatus(store);
-                            return (
-                                <div key={store.store_id} className="mb-3 p-4 bg-white border-l-4 border-blue-500 shadow-sm rounded">
-                                    <div className="flex justify-between items-start">
-                                        <h3 className="font-bold text-sm text-gray-800">{store.name}</h3>
-                                        <span className={`text-[9px] font-black ${status.color}`}>{status.text}</span>
+                        {stores.map(store => (
+                            <div
+                                key={store.store_id}
+                                onMouseEnter={() => setHoveredStoreId(store.store_id)}
+                                onMouseLeave={() => setHoveredStoreId(null)}
+                                className={`mb-3 p-4 bg-white border-l-4 shadow-sm rounded cursor-pointer transition-all ${
+                                    hoveredStoreId === store.store_id
+                                        ? 'border-red-500 shadow-md bg-blue-50 transform scale-[1.02]'
+                                        : 'border-blue-500'
+                                }`}
+                            >
+                                <div className="flex justify-between items-start">
+                                    <h3 className="font-bold text-sm text-gray-800">{store.name}</h3>
+                                    <span className={`text-[9px] font-black ${store.is_open ? 'text-green-600' : 'text-red-500'}`}>
+                                        {store.is_open ? 'OPEN' : 'CLOSED'}
+                                    </span>
+                                </div>
+
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {store.address_street}<br/>
+                                    {store.address_city}, {store.address_state} {store.address_postal_code}
+                                </p>
+
+                                <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-2 gap-2">
+                                    <div className="text-[10px] text-gray-600">
+                                        <span className="font-bold block text-gray-400 uppercase">Phone</span>
+                                        {store.phone || "N/A"}
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1 uppercase tracking-tighter">{store.address_street}</p>
-                                    <div className="flex justify-between mt-3 items-center">
-                                        <p className="text-xs text-blue-600 font-bold">{store.distance ? `${parseFloat(store.distance).toFixed(1)} mi` : 'N/A'}</p>
-                                        <span className="text-[9px] uppercase font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{store.store_type}</span>
+                                    <div className="text-[10px] text-gray-600 text-right">
+                                        <span className="font-bold block text-gray-400 uppercase">Hours</span>
+                                        {getHoursDisplay(store)}
                                     </div>
                                 </div>
-                            );
-                        })}
+
+                                <div className="flex justify-between mt-3 items-center">
+                                    <p className="text-xs text-blue-600 font-bold">
+                                        {store.distance !== null ? `${parseFloat(store.distance).toFixed(1)} mi` : ''}
+                                    </p>
+                                    <span className="text-[9px] uppercase font-bold text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{store.store_type}</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
 
                     {totalResults > resultsPerPage && (
@@ -169,12 +219,23 @@ const LocatorPage = () => {
                 </div>
 
                 <div className="flex-1 relative z-10">
-                    <MapContainer center={center} zoom={11} style={{ height: '100%', width: '100%' }}>
+                    <MapContainer center={center} zoom={zoom} style={{ height: '100%', width: '100%' }}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                        <MapRecenter center={center} />
+                        <MapRecenter center={center} zoom={zoom} />
                         {stores.map(store => (
-                            <Marker key={store.store_id} position={[store.latitude, store.longitude]}>
-                                <Popup><div className="text-xs"><b>{store.name}</b><br/>{store.address_street}</div></Popup>
+                            <Marker
+                                key={store.store_id}
+                                position={[store.latitude, store.longitude]}
+                                icon={hoveredStoreId === store.store_id ? HoverIcon : DefaultIcon}
+                                zIndexOffset={hoveredStoreId === store.store_id ? 1000 : 0}
+                            >
+                                <Popup>
+                                    <div className="text-xs">
+                                        <b className="uppercase text-blue-600">{store.name}</b><br/>
+                                        {store.address_street}<br/>
+                                        <span className="text-gray-500">{store.phone}</span>
+                                    </div>
+                                </Popup>
                             </Marker>
                         ))}
                     </MapContainer>
@@ -184,9 +245,11 @@ const LocatorPage = () => {
     );
 };
 
-function MapRecenter({ center }) {
+function MapRecenter({ center, zoom }) {
     const map = useMap();
-    map.flyTo(center, 12);
+    useEffect(() => {
+        map.flyTo(center, zoom);
+    }, [center, zoom, map]);
     return null;
 }
 

@@ -67,7 +67,7 @@ STATE_TIMEZONES = {
 
     'MT': 'America/Denver', 'ID': 'America/Denver', 'WY': 'America/Denver',
     'UT': 'America/Denver', 'CO': 'America/Denver', 'NM': 'America/Denver',
-    'AZ': 'America/Phoenix',  # Arizona does not observe DST
+    'AZ': 'America/Phoenix',
 
     'CA': 'America/Los_Angeles', 'NV': 'America/Los_Angeles', 'OR': 'America/Los_Angeles',
     'WA': 'America/Los_Angeles',
@@ -81,11 +81,11 @@ def is_store_open(store, current_time_unused=None):
     tz_name = STATE_TIMEZONES.get(store.address_state, 'UTC')
     tz = pytz.timezone(tz_name)
 
-    # 2. Get Current Time in THAT Timezone
+    # 2. Get REAL Current Time in THAT Timezone
     store_now = datetime.now(tz)
 
     days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-    day_name = days[store_now.weekday()]  # 0=Mon, 6=Sun
+    day_name = days[store_now.weekday()]
 
     # 3. Check Hours
     hours = getattr(store, f"hours_{day_name}", None)
@@ -119,7 +119,6 @@ def search_stores_logic(
     all_candidates = query.all()
     valid_stores = []
 
-    # Filter Logic
     for s in all_candidates:
         # Distance Check
         dist = None
@@ -131,16 +130,14 @@ def search_stores_logic(
         else:
             s.distance_miles = None
 
-        # Open Now Check (With Timezone Fix)
+        # Open Now Check (Timezone Aware)
         if open_now and not is_store_open(s):
             continue
 
         valid_stores.append(s)
 
-    # Sort
     valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
