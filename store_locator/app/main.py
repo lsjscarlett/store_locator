@@ -203,16 +203,25 @@ def update_store(
 
 
 @app.delete("/api/admin/stores/{store_id}", status_code=204)
-def delete_store(store_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def delete_store(
+        store_id: str,
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
+):
+    # 1. Check Permissions
     if current_user.role.name not in ["admin", "marketer"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
+    # 2. Find the Store
     store = db.query(models.Store).filter(models.Store.store_id == store_id).first()
-    if store:
-        store.status = "inactive"
-        db.commit()
-    return
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
 
+    # 3. Delete and COMMIT (Crucial Step)
+    db.delete(store)
+    db.commit()
+
+    return None
 
 # --- 5. ADMIN: USER MANAGEMENT ---
 @app.post("/api/admin/users", response_model=schemas.UserResponse, status_code=201)
