@@ -40,29 +40,34 @@ def search_stores_logic(
         lon: Optional[float],
         radius_miles: float,
         store_type: Optional[str],
-        services: Optional[List[str]],  # <--- Match Argument #6 from main.py
+        services: Optional[List[str]],
         page: int,
         limit: int,
         open_now: bool = False
 ):
-    # Base Query: Use ilike for case-insensitive 'active'
+    # 1. Base Query
     query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # Type Filter: Case-insensitive
+    # 2. Type Filter
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
+    # 3. SERVICES FILTER FIX:
+    # Only filter if the list is NOT empty. If it's empty, ignore it.
+    if services and len(services) > 0:
+        for svc_name in services:
+            query = query.filter(models.Store.services.any(models.Service.name.ilike(svc_name)))
+
     all_candidates = query.all()
 
-    # SAFETY: If status is NULL in DB, fetch all stores anyway
+    # Fallback: if 'active' filter is too strict, get all
     if not all_candidates:
         all_candidates = db.query(models.Store).all()
 
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # Distance/Nationwide Logic
-    # If Nationwide (5000) or geocoding failed, skip distance checks
+    # 4. Proximity / Nationwide
     if lat is None or lon is None or radius_miles >= 5000:
         valid_stores = all_candidates
         for s in valid_stores:
@@ -71,16 +76,14 @@ def search_stores_logic(
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
-                # Open Now filter (optional)
                 if open_now and not is_store_open(store, current_time):
                     continue
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort closest first
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # Pagination
+    # 5. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
