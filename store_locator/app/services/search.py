@@ -1,4 +1,3 @@
-# app/services/search.py
 import math
 import time
 from typing import List, Optional, Tuple, Dict
@@ -7,50 +6,46 @@ from app import models
 from geopy.geocoders import Nominatim
 from datetime import datetime
 
-# --- 1. IN-MEMORY CACHE SETUP (Satisfies Section 1.6) ---
-# Format: { "key": { "value": data, "expires": timestamp } }
+# --- 1. IN-MEMORY CACHE (No Redis Required) ---
 _internal_cache: Dict[str, dict] = {}
 
 
 def cache_get(key: str):
-    """Retrieve data from memory if it exists and hasn't expired."""
     data = _internal_cache.get(key)
     if not data:
         return None
     if time.time() > data["expires"]:
-        del _internal_cache[key]  # Cleanup expired
+        del _internal_cache[key]
         return None
     return data["value"]
 
 
 def cache_set(key: str, value, ttl_seconds: int):
-    """Save data to memory with an expiration time."""
     _internal_cache[key] = {
         "value": value,
         "expires": time.time() + ttl_seconds
     }
 
 
-# --- 2. GEOCODER WITH CACHING ---
+# --- 2. GEOCODER ---
 def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
-    # Check Cache First (Requirement: Cache Geocoding)
+    # Check Cache
     cache_key = f"geo:{query.lower().strip()}"
     cached_geo = cache_get(cache_key)
     if cached_geo:
-        print(f"DEBUG: Cache Hit for Geocode '{query}'")
         return cached_geo
 
-    # If not in cache, call API
-    geolocator = Nominatim(user_agent="retail_locator_final_v1")
+    # Call API
+    geolocator = Nominatim(user_agent="retail_locator_final_v2")
     try:
+        # We append ", USA" to help, but user should still provide City/Zip for best results
         location = geolocator.geocode(f"{query}, USA", timeout=10)
         if location:
             result = (location.latitude, location.longitude)
-            # Save to Cache for 30 Days (30 * 24 * 60 * 60 seconds)
-            cache_set(cache_key, result, 2592000)
+            cache_set(cache_key, result, 2592000)  # Cache for 30 days
             return result
-    except Exception as e:
-        print(f"Geocode Error: {e}")
+    except Exception:
+        pass
 
     return None, None
 
@@ -84,7 +79,6 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
-    # 1. Base Query
     query = db.query(models.Store)
     if store_type and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
@@ -94,16 +88,14 @@ def search_stores_logic(
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # 2. Filtering
+    # Filter by Distance
     if lat is None or lon is None or radius_miles >= 5000:
-        # Nationwide
         for s in all_candidates:
             if open_now and not is_store_open(s, current_time):
                 continue
             s.distance_miles = None
             valid_stores.append(s)
     else:
-        # Distance
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
@@ -114,11 +106,12 @@ def search_stores_logic(
 
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 3. Pagination & Mapping
+    # Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
+    # Mapping Results (ENSURING HOURS ARE INCLUDED)
     results = []
     for s in paginated:
         results.append({
@@ -133,6 +126,8 @@ def search_stores_logic(
             "latitude": s.latitude,
             "longitude": s.longitude,
             "distance": getattr(s, 'distance_miles', None),
+
+            # --- CRITICAL MISSING FIELDS ---
             "phone": s.phone,
             "hours_mon": s.hours_mon,
             "hours_tue": s.hours_tue,
