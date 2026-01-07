@@ -68,7 +68,16 @@ def search_stores(
         db: Session = Depends(get_db)
 ):
     try:
-        # ... (Cache & Geocoding logic stays the same) ...
+        # --- 1. UNCOMMENT THESE 3 LINES (Required for saving to Redis later) ---
+        payload_str = payload.model_dump_json()
+        query_hash = hashlib.md5(payload_str.encode()).hexdigest()
+        cache_key = f"search_results:{query_hash}"
+
+        # --- 2. Check Redis (Keep this commented out to force fresh data for now) ---
+        # if redis_client:
+        #     cached_data = redis_client.get(cache_key)
+        #     if cached_data:
+        #         return json.loads(cached_data)
 
         # Geocode if needed
         lat, lon = None, None
@@ -84,13 +93,13 @@ def search_stores(
             lon=lon,
             radius_miles=payload.filters.radius_miles,
             store_type=payload.filters.store_type,
-            services=payload.filters.services,  # This will work once schemas.py is pushed
+            services=payload.filters.services,
             page=payload.page,
             limit=payload.limit,
-            open_now=payload.filters.open_now  # <--- ADD THIS LINE
+            open_now=payload.filters.open_now
         )
 
-        # Save to Redis (TTL 5 mins)
+        # --- 3. Save to Redis (This works now because cache_key is defined) ---
         if redis_client and results:
             redis_client.setex(cache_key, 300, json.dumps(results, default=str))
 
@@ -99,9 +108,8 @@ def search_stores(
     except Exception as e:
         import traceback
         print(f"CRITICAL SEARCH ERROR: {str(e)}")
-        print(traceback.format_exc())  # This will show exactly which line failed in Railway Logs
+        print(traceback.format_exc())
         return {"error": str(e), "results": [], "total": 0, "page": 1, "limit": 10}
-
 
 # --- 3. AUTHENTICATION ---
 @app.post("/api/auth/login", response_model=schemas.Token)
