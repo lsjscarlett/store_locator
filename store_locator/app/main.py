@@ -99,9 +99,14 @@ def search_stores(
             open_now=payload.filters.open_now
         )
 
-        # --- 3. Save to Redis (This works now because cache_key is defined) ---
+        # --- THE FIX: Wrap Redis in try/except ---
+        # This prevents the app from crashing if Redis is down or misconfigured (localhost)
         if redis_client and results:
-            redis_client.setex(cache_key, 300, json.dumps(results, default=str))
+            try:
+                redis_client.setex(cache_key, 300, json.dumps(results, default=str))
+            except Exception as redis_error:
+                print(f"Redis Save Failed (Non-critical): {redis_error}")
+                # We simply continue and return the results anyway!
 
         return results
 
