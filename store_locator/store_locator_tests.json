@@ -1,13 +1,13 @@
 {
 	"info": {
-		"name": "Store Locator Ultimate Suite (Actions + Edge Cases)",
+		"name": "Store Locator Tests",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
 		{ "key": "base_url", "value": "https://storelocatorbackend-production.up.railway.app", "type": "string" },
 		{ "key": "token", "value": "", "type": "string" },
 		{ "key": "refresh_token", "value": "", "type": "string" },
-		{ "key": "test_store_id", "value": "TEST_ULTIMATE_01", "type": "string" },
+		{ "key": "test_store_id", "value": "TEST_0001", "type": "string" },
 		{ "key": "test_user_id", "value": "", "type": "string" },
 		{ "key": "viewer_token", "value": "", "type": "string" }
 	],
@@ -33,7 +33,7 @@
 		},
 		{
 			"name": "4. Auth: Refresh Token",
-			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "pm.environment.set(\"token\", jsonData.access_token);", "pm.test(\"Refreshed\", function () { pm.expect(jsonData.access_token).to.not.be.undefined; });"] } }],
+			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "pm.globals.set(\"token\", jsonData.access_token);", "pm.globals.set(\"refresh_token\", jsonData.refresh_token);", "pm.test(\"Got Token\", function () { \n    pm.expect(jsonData.access_token).to.not.be.undefined; \n});"] } }],
 			"request": {
 				"method": "POST",
 				"header": [{"key": "Content-Type","value": "application/json"}],
@@ -42,7 +42,7 @@
 			}
 		},
 		{
-			"name": "5. Store: Create (Happy Path)",
+			"name": "5. Store: Create",
 			"request": {
 				"method": "POST",
 				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
@@ -104,10 +104,6 @@
 				"body": { "mode": "formdata", "formdata": [{"key": "file", "type": "file", "description": "Select a CSV file"}] },
 				"url": "{{base_url}}/api/admin/stores/import"
 			}
-		},
-		{
-			"name": "--- EDGE CASES START HERE ---",
-			"request": { "method": "GET", "url": "{{base_url}}/" }
 		},
 		{
 			"name": "12. Edge: Duplicate Store ID (Should Fail)",

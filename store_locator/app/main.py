@@ -202,26 +202,47 @@ def update_store(
     return store
 
 
-@app.delete("/api/admin/stores/{store_id}", status_code=204)
-def delete_store(
-        store_id: str,
+@app.delete("/api/admin/users/{user_id}", status_code=204)
+def delete_user(
+        user_id: int,
         db: Session = Depends(get_db),
         current_user: models.User = Depends(get_current_user)
 ):
-    # 1. Check Permissions
-    if current_user.role.name not in ["admin", "marketer"]:
+    # 1. Security: Only Admins can delete users
+    if current_user.role.name != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # 2. Find the Store
-    store = db.query(models.Store).filter(models.Store.store_id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
+    # 2. Safety: Prevent deleting the Super Admin (YOU)
+    if user_id == 1:
+        raise HTTPException(status_code=400, detail="Cannot delete Super Admin")
 
-    # 3. Delete and COMMIT (Crucial Step)
-    db.delete(store)
-    db.commit()
+    # 3. Find and Delete
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
+    db.delete(user)
+    db.commit()  # Commits the change to the database
     return None
+
+from sqlalchemy import text
+@app.post("/api/admin/reset_db")
+def reset_db(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    if current_user.role.name != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # DELETE ALL USERS EXCEPT ID 1
+    db.execute(text("DELETE FROM users WHERE id > 1"))
+
+    # RESET THE ID COUNTER (SQLite specific)
+    db.execute(text("UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"))
+
+    db.commit()
+    return {"message": "Database cleaned and IDs reset"}
+
 
 # --- 5. ADMIN: USER MANAGEMENT ---
 @app.post("/api/admin/users", response_model=schemas.UserResponse, status_code=201)
