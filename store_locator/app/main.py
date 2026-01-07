@@ -276,6 +276,39 @@ def update_user(
     return user
 
 
+# --- TEMPORARY SEED ENDPOINT ---
+@app.get("/seed_admin")
+def seed_admin_user(db: Session = Depends(get_db)):
+    # 1. Create All Roles (Admin, Marketer, Viewer)
+    roles = ["admin", "marketer", "viewer"]
+    created_roles = {}
+    for r_name in roles:
+        role = db.query(models.Role).filter(models.Role.name == r_name).first()
+        if not role:
+            role = models.Role(name=r_name)
+            db.add(role)
+            db.commit()
+            db.refresh(role)
+        created_roles[r_name] = role
+
+    # 2. Ensure Admin Exists (Optional, but good safety)
+    admin_email = "admin@example.com"
+    existing_user = db.query(models.User).filter(models.User.email == admin_email).first()
+    if not existing_user:
+        hashed_pwd = get_password_hash("admin123")
+        new_user = models.User(
+            email=admin_email,
+            password_hash=hashed_pwd,
+            role_id=created_roles["admin"].id,
+            is_active=True
+        )
+        db.add(new_user)
+        db.commit()
+
+    return {"message": "Success! Roles (admin, marketer, viewer) ensured."}
+
+
+
 # --- 6. IMPORT ---
 @app.post("/api/admin/stores/import")
 def import_stores(
@@ -295,7 +328,21 @@ def import_stores(
             if not store_id: continue
 
             existing = db.query(models.Store).filter(models.Store.store_id == store_id).first()
-            service_objs = process_services(db, row.get("services", ""))
+
+            # --- ROBUST FIX: Convert String to List ---
+            raw_services = row.get("services", "")
+            service_list = []
+
+            if raw_services:
+                # 1. Replace pipes with commas
+                clean_str = raw_services.replace("|", ",")
+                # 2. Split into list and strip whitespace
+                service_list = [s.strip() for s in clean_str.split(',') if s.strip()]
+
+            # 3. Pass LIST to process_services (same as create_store)
+            service_objs = process_services(db, service_list)
+
+            # ------------------------------------------
 
             def safe_float(v):
                 try:
@@ -308,7 +355,9 @@ def import_stores(
                 existing.store_type = row["store_type"]
                 existing.status = row["status"]
                 existing.phone = row["phone"]
-                existing.services = service_objs
+                existing.services = service_objs  # Updates relationship
+                existing.latitude = safe_float(row["latitude"])
+                existing.longitude = safe_float(row["longitude"])
                 stats["updated"] += 1
             else:
                 new_store = models.Store(
