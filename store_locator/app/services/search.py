@@ -42,81 +42,67 @@ def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 # --- SEARCH LOGIC (Fixed Signature) ---
-def search_stores_logic(
-        db: Session,
-        lat: Optional[float],
-        lon: Optional[float],
-        radius_miles: float,
-        store_type: Optional[str],
-        page: int,
-        limit: int,
-        open_now=False
-):
-    # 1. Start with an active stores query (No services join needed)
-    query = db.query(models.Store).filter(models.Store.status == "active")
+def search_stores_logic(db, lat, lon, radius_miles, store_type, page, limit, open_now=False):
+    # 1. Start with a clean query
+    query = db.query(models.Store)
 
-    # 2. Filter by Store Type (if selected)
-    if store_type and store_type.strip():
-        query = query.filter(models.Store.store_type == store_type)
+    # 2. Defensive Filter: Only filter by status if the column exists and is populated
+    # If this line is causing 0 results, comment it out temporarily to test
+    query = query.filter(models.Store.status == "active")
+
+    # 3. Defensive Store Type: Only filter if it's not "All" or Empty
+    if store_type and store_type.strip() != "" and store_type.lower() != "all":
+        query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
     all_candidates = query.all()
-    current_time = datetime.now().strftime("%H:%M")
+
+    # DEBUG PRINT: Check your Railway logs for this!
+    print(f"DEBUG: Found {len(all_candidates)} stores in DB after initial filters")
+
     valid_stores = []
+    current_time = datetime.now().strftime("%H:%M")
 
-    # 3. Handle Distance and Open Now filtering
-    if lat is not None and lon is not None:
-        for store in all_candidates:
-            dist = calculate_distance(lat, lon, store.latitude, store.longitude)
-            if dist <= radius_miles:
-                # Optional: Check "Open Now"
-                if open_now and not is_store_open(store, current_time):
-                    continue
-
-                store.distance_miles = dist
-                valid_stores.append(store)
-
-        # --- CRITICAL: SORT BY PROXIMITY ---
-        valid_stores.sort(key=lambda x: x.distance_miles)
-    else:
-        # Fallback: if geocoding fails, show stores but without distance
+    # 4. If geocoding failed (10036 issue) OR Radius is Nationwide
+    # We skip the distance check and just return the candidates
+    if lat is None or lon is None or radius_miles >= 5000:
+        # FALLBACK: If we can't find where the user is, or they want everything,
+        # skip distance math and return the full list.
         valid_stores = all_candidates
         for s in valid_stores:
             s.distance_miles = None
+    else:
+        # 5. Normal Distance Filter
+        for store in all_candidates:
+            dist = calculate_distance(lat, lon, store.latitude, store.longitude)
+            if dist <= radius_miles:
+                if open_now and not is_store_open(store, current_time):
+                    continue
+                store.distance_miles = dist
+                valid_stores.append(store)
 
-    # 4. Handle Pagination
+        # Sort by distance only if we have coordinates
+        valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
+
+    # 6. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
-    end = start + limit
-    paginated_results = valid_stores[start:end]
+    paginated = valid_stores[start: start + limit]
 
-    # 5. Map to the clean Frontend format (removed services field)
+    # 7. Map to JSON
     final_results = []
-    for s in paginated_results:
+    for s in paginated:
         final_results.append({
             "store_id": s.store_id,
             "name": s.name,
             "address_street": s.address_street,
             "latitude": s.latitude,
             "longitude": s.longitude,
-            "status": s.status,
             "distance": getattr(s, 'distance_miles', None),
             "store_type": s.store_type,
-            "phone": getattr(s, 'phone', 'N/A'),
-            "hours_mon": s.hours_mon,
-            "hours_tue": s.hours_tue,
-            "hours_wed": s.hours_wed,
-            "hours_thu": s.hours_thu,
-            "hours_fri": s.hours_fri,
-            "hours_sat": s.hours_sat,
-            "hours_sun": s.hours_sun,
+            "hours_mon": s.hours_mon
         })
 
-    return {
-        "results": final_results,
-        "page": page,
-        "limit": limit,
-        "total": total
-    }
+    return {"results": final_results, "total": total, "page": page, "limit": limit}
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 3958.8  # Earth radius in miles
