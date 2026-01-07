@@ -15,9 +15,24 @@ const AdminDashboard = () => {
     // CSV Upload
     const [uploading, setUploading] = useState(false);
 
-    // Create User Modal
+    // Modals
     const [showUserModal, setShowUserModal] = useState(false);
+    const [showStoreModal, setShowStoreModal] = useState(false);
+
+    // Form States
     const [newUser, setNewUser] = useState({ email: '', password: '', role_id: 2 });
+    const [newStore, setNewStore] = useState({
+        store_id: '',
+        name: '',
+        store_type: 'regular',
+        address_street: '',
+        address_city: '',
+        address_state: '',
+        address_postal_code: '',
+        phone: '',
+        services: '', // Comma separated string for input
+        status: 'active'
+    });
 
     const navigate = useNavigate();
 
@@ -102,6 +117,31 @@ const AdminDashboard = () => {
         }
     };
 
+    const handleCreateStore = async (e) => {
+        e.preventDefault();
+        try {
+            // Convert comma-separated services string to array
+            const servicesArray = newStore.services.split(',').map(s => s.trim()).filter(s => s !== '');
+
+            await api.post('/admin/stores', {
+                ...newStore,
+                services: servicesArray
+            });
+
+            setShowStoreModal(false);
+            // Reset form
+            setNewStore({
+                store_id: '', name: '', store_type: 'regular',
+                address_street: '', address_city: '', address_state: '', address_postal_code: '',
+                phone: '', services: '', status: 'active'
+            });
+            fetchData();
+            alert("Store Created Successfully!");
+        } catch (err) {
+            alert("Failed to create store. Store ID might already exist.");
+        }
+    };
+
     const handleLogout = () => {
         localStorage.clear();
         navigate('/login');
@@ -142,10 +182,18 @@ const AdminDashboard = () => {
 
                     <div className="flex gap-2">
                         {activeTab === 'stores' ? (
-                            <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition">
-                                {uploading ? 'Uploading...' : 'Import CSV'}
-                                <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" disabled={uploading} />
-                            </label>
+                            <>
+                                <button
+                                    onClick={() => setShowStoreModal(true)}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-blue-700 transition"
+                                >
+                                    + Create Store
+                                </button>
+                                <label className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-green-700 transition flex items-center">
+                                    {uploading ? 'Uploading...' : 'Import CSV'}
+                                    <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" disabled={uploading} />
+                                </label>
+                            </>
                         ) : (
                             <button
                                 onClick={() => setShowUserModal(true)}
@@ -229,7 +277,9 @@ const AdminDashboard = () => {
                 </div>
             </div>
 
-            {/* CREATE USER MODAL - Fixed Classes */}
+            {/* MODALS */}
+
+            {/* 1. CREATE USER MODAL */}
             {showUserModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]">
                     <div className="bg-white p-6 rounded-lg shadow-xl w-96">
@@ -250,13 +300,98 @@ const AdminDashboard = () => {
                                 value={newUser.role_id}
                                 onChange={e => setNewUser({...newUser, role_id: e.target.value})}
                             >
-                                <option value="1">Admin (Full Access)</option>
-                                <option value="2">Marketer (Store Access)</option>
-                                <option value="3">Viewer (Read Only)</option>
+                                <option value="1">Admin</option>
+                                <option value="2">Marketer</option>
+                                <option value="3">Viewer</option>
                             </select>
                             <div className="flex gap-2 mt-2">
                                 <button type="button" onClick={() => setShowUserModal(false)} className="flex-1 p-2 bg-gray-200 rounded font-bold text-xs">Cancel</button>
                                 <button type="submit" className="flex-1 p-2 bg-blue-600 text-white rounded font-bold text-xs">Create</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* 2. CREATE STORE MODAL */}
+            {showStoreModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000]">
+                    <div className="bg-white p-6 rounded-lg shadow-xl w-[500px] max-h-[90vh] overflow-y-auto">
+                        <h2 className="text-lg font-black text-gray-800 mb-4">Add New Store</h2>
+                        <form onSubmit={handleCreateStore} className="flex flex-col gap-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Store ID (e.g. S1001)</label>
+                                    <input required type="text" className="p-2 border rounded text-sm w-full"
+                                        value={newStore.store_id} onChange={e => setNewStore({...newStore, store_id: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Store Type</label>
+                                    <select className="p-2 border rounded text-sm w-full bg-white"
+                                        value={newStore.store_type} onChange={e => setNewStore({...newStore, store_type: e.target.value})}>
+                                        <option value="regular">Regular</option>
+                                        <option value="flagship">Flagship</option>
+                                        <option value="express">Express</option>
+                                        <option value="outlet">Outlet</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Store Name</label>
+                                <input required type="text" className="p-2 border rounded text-sm w-full"
+                                    value={newStore.name} onChange={e => setNewStore({...newStore, name: e.target.value})} />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Street Address</label>
+                                <input required type="text" className="p-2 border rounded text-sm w-full"
+                                    value={newStore.address_street} onChange={e => setNewStore({...newStore, address_street: e.target.value})} />
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="col-span-1">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">City</label>
+                                    <input required type="text" className="p-2 border rounded text-sm w-full"
+                                        value={newStore.address_city} onChange={e => setNewStore({...newStore, address_city: e.target.value})} />
+                                </div>
+                                <div className="col-span-1">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">State</label>
+                                    <input required type="text" className="p-2 border rounded text-sm w-full" placeholder="e.g. NY"
+                                        value={newStore.address_state} onChange={e => setNewStore({...newStore, address_state: e.target.value})} />
+                                </div>
+                                <div className="col-span-1">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Zip</label>
+                                    <input required type="text" className="p-2 border rounded text-sm w-full"
+                                        value={newStore.address_postal_code} onChange={e => setNewStore({...newStore, address_postal_code: e.target.value})} />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Phone (Optional)</label>
+                                    <input type="text" className="p-2 border rounded text-sm w-full"
+                                        value={newStore.phone} onChange={e => setNewStore({...newStore, phone: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase">Status</label>
+                                    <select className="p-2 border rounded text-sm w-full bg-white"
+                                        value={newStore.status} onChange={e => setNewStore({...newStore, status: e.target.value})}>
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-gray-400 uppercase">Services (Comma Separated)</label>
+                                <input type="text" placeholder="WiFi, Parking, Wheelchair Access" className="p-2 border rounded text-sm w-full"
+                                    value={newStore.services} onChange={e => setNewStore({...newStore, services: e.target.value})} />
+                            </div>
+
+                            <div className="flex gap-2 mt-4 pt-4 border-t">
+                                <button type="button" onClick={() => setShowStoreModal(false)} className="flex-1 p-2 bg-gray-200 rounded font-bold text-xs">Cancel</button>
+                                <button type="submit" className="flex-1 p-2 bg-blue-600 text-white rounded font-bold text-xs">Create Store</button>
                             </div>
                         </form>
                     </div>
