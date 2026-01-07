@@ -42,36 +42,41 @@ def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
     return None, None
 
 # --- SEARCH LOGIC (Fixed Signature) ---
-def search_stores_logic(db, lat, lon, radius_miles, store_type, page, limit, open_now=False):
-    # 1. Start with a clean query
-    query = db.query(models.Store)
+def search_stores_logic(
+        db: Session,
+        lat: Optional[float],
+        lon: Optional[float],
+        radius_miles: float,
+        store_type: Optional[str],
+        page: int,
+        limit: int,
+        open_now=False
+):
+    # 1. Start with a broad query (Case-Insensitive)
+    # Using ilike ensures 'Active' matches 'active'
+    query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # 2. Defensive Filter: Only filter by status if the column exists and is populated
-    # If this line is causing 0 results, comment it out temporarily to test
-    query = query.filter(models.Store.status == "active")
-
-    # 3. Defensive Store Type: Only filter if it's not "All" or Empty
-    if store_type and store_type.strip() != "" and store_type.lower() != "all":
+    # 2. Filter by Store Type (if selected)
+    if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
     all_candidates = query.all()
 
-    # DEBUG PRINT: Check your Railway logs for this!
-    print(f"DEBUG: Found {len(all_candidates)} stores in DB after initial filters")
+    # --- SAFETY CHECK ---
+    # If the 'active' filter broke it, try fetching EVERYTHING just to be sure
+    if not all_candidates:
+        all_candidates = db.query(models.Store).all()
 
-    valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
+    valid_stores = []
 
-    # 4. If geocoding failed (10036 issue) OR Radius is Nationwide
-    # We skip the distance check and just return the candidates
+    # 3. Distance & Nationwide Logic
+    # If Nationwide (5000) or geocoding failed, skip the math and return all
     if lat is None or lon is None or radius_miles >= 5000:
-        # FALLBACK: If we can't find where the user is, or they want everything,
-        # skip distance math and return the full list.
         valid_stores = all_candidates
         for s in valid_stores:
             s.distance_miles = None
     else:
-        # 5. Normal Distance Filter
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
@@ -80,17 +85,17 @@ def search_stores_logic(db, lat, lon, radius_miles, store_type, page, limit, ope
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort by distance only if we have coordinates
+        # Sort by proximity
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 6. Pagination
+    # 4. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
-    paginated = valid_stores[start: start + limit]
+    paginated_results = valid_stores[start:start + limit]
 
-    # 7. Map to JSON
+    # 5. Clean Mapping
     final_results = []
-    for s in paginated:
+    for s in paginated_results:
         final_results.append({
             "store_id": s.store_id,
             "name": s.name,
@@ -102,7 +107,12 @@ def search_stores_logic(db, lat, lon, radius_miles, store_type, page, limit, ope
             "hours_mon": s.hours_mon
         })
 
-    return {"results": final_results, "total": total, "page": page, "limit": limit}
+    return {
+        "results": final_results,
+        "page": page,
+        "limit": limit,
+        "total": total
+    }
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 3958.8  # Earth radius in miles
