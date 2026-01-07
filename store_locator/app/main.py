@@ -81,10 +81,12 @@ def search_stores(
 
         # Geocode if needed
         lat, lon = None, None
+        # Combine inputs into one single query string
         search_query = payload.zip_code or payload.address
+
         if search_query:
-            from app.services.search import get_lat_lon
-            lat, lon = get_lat_lon(search_query)  # Pass ONLY the search_query string
+            # Note: We already imported get_lat_lon at the top of the file
+            lat, lon = get_lat_lon(search_query)
 
         # Search Logic
         # Note: Added explicit keyword arguments to be safe
@@ -168,7 +170,7 @@ def create_store(
 
     lat, lon = 0.0, 0.0
     if store.address_postal_code:
-        lat, lon = get_lat_lon(None, store.address_postal_code)
+        lat, lon = get_lat_lon(store.address_postal_code)
 
     # Process Services
     service_objs = process_services(db, store.services)

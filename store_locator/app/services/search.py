@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Optional, Tuple
 import math
 from app import models
@@ -8,48 +9,55 @@ from datetime import datetime
 
 # --- GEOCODER HELPER ---
 def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
-    geolocator = Nominatim(user_agent="my_locator_final_v4")
+    # user_agent should be unique
+    geolocator = Nominatim(user_agent="store_locator_final_check")
     try:
-        # Search USA specifically
+        # Strategy: Search within USA for accuracy
         location = geolocator.geocode(f"{query}, USA", timeout=10)
         if location:
             return location.latitude, location.longitude
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Geocoding Error: {e}")
     return None, None
 
 
 # --- SEARCH LOGIC ---
+# Signature MUST match main.py: (db, lat, lon, radius_miles, store_type, services, page, limit)
 def search_stores_logic(
         db: Session,
         lat: Optional[float],
         lon: Optional[float],
         radius_miles: float,
         store_type: Optional[str],
-        services: Optional[List[str]],  # Kept for signature compatibility
+        services: Optional[List[str]],  # Added back to match main.py
         page: int,
         limit: int,
-        open_now=False
+        open_now: bool = False
 ):
-    # 1. Start with active stores
-    # Using ilike("active") handles 'active', 'Active', etc.
+    # 1. Base Query: Start with active stores
+    # .ilike handles case sensitivity (Active vs active)
     query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # 2. Filter by Store Type (Only if not empty)
+    # 2. Store Type Filter
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
+    # 3. Services Filter (Optional)
+    if services and len(services) > 0:
+        for svc_name in services:
+            query = query.filter(models.Store.services.any(models.Service.name.ilike(svc_name)))
+
     all_candidates = query.all()
 
-    # SAFETY: If 'active' status is missing in DB, fetch everything
+    # Fallback: If no 'active' stores found, fetch all as a safety net
     if not all_candidates:
         all_candidates = db.query(models.Store).all()
 
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # 3. Distance & Nationwide Logic
-    # If radius is 5000 (Nationwide) or geocoding failed, skip distance filter
+    # 4. Proximity & Nationwide Logic
+    # If radius is 5000 or geocoder failed, return everything (Nationwide)
     if lat is None or lon is None or radius_miles >= 5000:
         valid_stores = all_candidates
         for s in valid_stores:
@@ -58,6 +66,7 @@ def search_stores_logic(
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
+                # Optional Open Now Filter
                 if open_now and not is_store_open(store, current_time):
                     continue
                 store.distance_miles = dist
@@ -66,35 +75,41 @@ def search_stores_logic(
         # Sort closest first
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 4. Pagination
+    # 5. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
-    paginated_results = valid_stores[start:start + limit]
+    paginated = valid_stores[start: start + limit]
 
-    # 5. Mapping
-    final_results = []
-    for s in paginated_results:
-        final_results.append({
-            "store_id": s.store_id,
-            "name": s.name,
-            "address_street": s.address_street,
-            "latitude": s.latitude,
-            "longitude": s.longitude,
-            "distance": getattr(s, 'distance_miles', None),
-            "store_type": s.store_type,
-            "hours_mon": s.hours_mon
-        })
-
+    # 6. Response Mapping
     return {
-        "results": final_results,
+        "results": [
+            {
+                "store_id": s.store_id,
+                "name": s.name,
+                "address_street": s.address_street,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "distance": getattr(s, 'distance_miles', None),
+                "store_type": s.store_type,
+                "hours_mon": s.hours_mon,
+                "hours_tue": s.hours_tue,
+                "hours_wed": s.hours_wed,
+                "hours_thu": s.hours_thu,
+                "hours_fri": s.hours_fri,
+                "hours_sat": s.hours_sat,
+                "hours_sun": s.hours_sun,
+                "services": [svc.name for svc in s.services] if s.services else []
+            }
+            for s in paginated
+        ],
+        "total": total,
         "page": page,
-        "limit": limit,
-        "total": total
+        "limit": limit
     }
 
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 3958.8
+    R = 3958.8  # Miles
     dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
