@@ -1,27 +1,25 @@
-# 📍 Store Locator Full-Stack Application
+#  Store Locator Full-Stack Application
 
-A high-performance store locator system featuring a **FastAPI** backend, **React** frontend, **PostgreSQL** database, and **Redis** caching. This application enables users to find stores via geocoded search and allows administrators to manage store data through a secure dashboard.
+A high-performance store locator system featuring a **FastAPI** backend, **React** frontend, 
+**PostgreSQL** database, and **Redis** caching. This application enables users to find stores
+via geocoded search and allows administrators to manage store data through a secure dashboard.
 
 **Live Frontend:** [https://storelocatorfrontend-production.up.railway.app](https://storelocatorfrontend-production.up.railway.app)  
 **API Documentation (Swagger):** [https://storelocatorbackend-production.up.railway.app/docs](https://storelocatorbackend-production.up.railway.app/docs)
 
 ---
 
-## 🏗 Architecture Overview
-
-The application follows a modern decoupled architecture:
-
-* **Frontend:** React (Vite) + Leaflet.js for interactive mapping.
-* **Backend:** FastAPI (Python 3.9+) with asynchronous request handling.
-* **Database:** PostgreSQL (Relational storage for 1,000+ stores).
-* **Cache:** Redis (Caching search results via MD5 payload hashing to optimize performance).
-* **Security:** JWT (JSON Web Tokens) with Bcrypt password hashing.
-
+## Tech Stack
+* **Framework:** FastAPI (Python 3.10+)
+* **Database:** SQLAlchemy (SQLite/PostgreSQL compatible)
+* **Geocoding:** Nominatim (OpenStreetMap) via `geopy`
+* **Auth:** OAuth2 with JWT Access & Refresh Tokens
+* **Caching:** Custom In-Memory Caching (Replaces Redis for simplicity)
 
 
 ---
 
-## 🚀 Key Technical Choices
+##  Key Technical Choices
 
 ### 1. Framework Choice: FastAPI & React
 * **Backend:** FastAPI was chosen for its native support for asynchronous programming and automatic OpenAPI/Swagger documentation generation, which accelerated front-to-back integration.
@@ -37,7 +35,7 @@ The application follows a modern decoupled architecture:
 
 ---
 
-## 🔐 Authentication & Security
+##  Authentication & Security
 
 * **Flow:** The application uses a secure OAuth2 flow. Users login via `/api/auth/login` to receive an Access Token.
 * **RBAC (Role-Based Access Control):** Permissions are strictly enforced at the API level using FastAPI dependencies. 
@@ -46,34 +44,39 @@ The application follows a modern decoupled architecture:
     * **Viewer:** Read-only access to the dashboard.
 * **CORS:** Cross-Origin Resource Sharing is strictly configured to allow the production frontend origin while blocking unauthorized external domains.
 
-
-
 ---
 
-## 🛠 Setup and Installation
+## Setup & Installation
 
-### Local Development
-1.  **Clone the repository.**
-2.  **Backend Setup:**
+1.  **Navigate to the folder:**
     ```bash
     cd store_locator
-    python3 -m venv .venv
-    source .venv/bin/activate
+    ```
+
+2.  **Create Virtual Environment:**
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install Dependencies:**
+    ```bash
     pip install -r requirements.txt
     ```
-3.  **Frontend Setup:**
+
+4.  **Run the Server:**
     ```bash
-    cd store_locator_frontend
-    npm install
-    npm run dev
+    uvicorn app.main:app --reload
     ```
+    The API will start at `http://localhost:8000`.
+
 
 ### Environment Variables (`.env`)
 The following variables must be set for the application to function:
 * `DATABASE_URL`: PostgreSQL connection string.
 * `REDIS_URL`: Redis connection string.
 * `SECRET_KEY`: Random string for JWT signing.
-* `VITE_API_URL`: The full URL of your backend (e.g., `https://backend.up.railway.app`).
+* `VITE_API_URL`: The full URL of backend (e.g., `https://backend.up.railway.app`).
 
 ---
 
@@ -87,13 +90,13 @@ The following variables must be set for the application to function:
 
 ---
 
-## 🧪 Testing Suite
+##  Testing Suite
 * **Tool:** `pytest`
 * **Run command:** `pytest app/tests`
 * **Coverage:** Includes validation for authentication logic, distance calculation accuracy, and CSV parsing integrity.
 
 
-## 📊 Database Schema
+##  Database Schema
 
 The database consists of five core tables designed for Role-Based Access Control (RBAC) and store data management.
 
@@ -108,7 +111,7 @@ The database consists of five core tables designed for Role-Based Access Control
 
 ---
 
-## 📡 Sample API Requests & Responses
+##  Sample API Requests & Responses
 
 ### 1. Store Search (Public)
 **Endpoint:** `POST /api/stores/search`  

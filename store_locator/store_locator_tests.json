@@ -1,0 +1,129 @@
+{
+	"info": {
+		"name": "Store Locator Final Tests",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://storelocatorbackend-production.up.railway.app",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/",
+					"host": ["{{base_url}}"],
+					"path": [""]
+				}
+			},
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Seed Admin User",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/seed_admin",
+					"host": ["{{base_url}}"],
+					"path": ["seed_admin"]
+				}
+			}
+		},
+		{
+			"name": "3. Login (Get Token)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"pm.environment.set(\"token\", jsonData.access_token);",
+							"pm.test(\"Got Access Token\", function () { pm.expect(jsonData.access_token).to.not.be.undefined; });"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"admin@example.com\",\n    \"role\": \"admin123\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/auth/login",
+					"host": ["{{base_url}}"],
+					"path": ["api", "auth", "login"]
+				}
+			}
+		},
+		{
+			"name": "4. Search Stores (Public)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"zip_code\": \"10036\",\n    \"page\": 1,\n    \"limit\": 5,\n    \"filters\": {\n        \"radius_miles\": 50,\n        \"store_type\": \"all\",\n        \"services\": [\"wifi\"]\n    }\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/stores/search",
+					"host": ["{{base_url}}"],
+					"path": ["api", "stores", "search"]
+				}
+			}
+		},
+		{
+			"name": "5. Create Store (Admin)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{"key": "Authorization","value": "Bearer {{token}}"},
+					{"key": "Content-Type","value": "application/json"}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"store_id\": \"POSTMAN_01\",\n  \"name\": \"Postman Test Store\",\n  \"store_type\": \"flagship\",\n  \"address_street\": \"350 Fifth Ave\",\n  \"address_city\": \"New York\",\n  \"address_state\": \"NY\",\n  \"address_postal_code\": \"10118\",\n  \"status\": \"active\",\n  \"services\": [\"wifi\", \"optical\"]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/api/admin/stores",
+					"host": ["{{base_url}}"],
+					"path": ["api", "admin", "stores"]
+				}
+			}
+		},
+		{
+			"name": "6. Delete Store (Admin)",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{"key": "Authorization","value": "Bearer {{token}}"}
+				],
+				"url": {
+					"raw": "{{base_url}}/api/admin/stores/POSTMAN_01",
+					"host": ["{{base_url}}"],
+					"path": ["api", "admin", "stores", "POSTMAN_01"]
+				}
+			}
+		}
+	]
+}
