@@ -1,11 +1,66 @@
-from sqlalchemy.orm import Session
-from typing import List, Optional, Tuple
+import redis
 import math
+from typing import List, Optional, Tuple
+from sqlalchemy.orm import Session
 from app import models
+from app.config import settings
+from geopy.geocoders import Nominatim
 from datetime import datetime
-from geopy.geocoders import Nominatim # <--- CRITICAL MISSING IMPORT
 
-# --- SEARCH LOGIC ---
+# --- 1. REDIS SETUP ---
+try:
+    redis_client = redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=0,
+        decode_responses=True
+    )
+except Exception as e:
+    print(f"Redis connection skipped: {e}")
+    redis_client = None
+
+
+# --- 2. GEOCODER HELPER ---
+def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
+    geolocator = Nominatim(user_agent="retail_locator_v12")
+    try:
+        location = geolocator.geocode(f"{query}, USA", timeout=10)
+        if location:
+            return location.latitude, location.longitude
+    except Exception:
+        pass
+    return None, None
+
+
+# --- 3. OPEN NOW LOGIC ---
+def is_store_open(store, current_time_str: str):
+    # current_time_str format: "HH:MM"
+    days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+    # datetime.now().weekday() is 0 for Monday.
+    # Our list is 0 for Sunday, so we adjust with (weekday + 1) % 7
+    day_idx = (datetime.now().weekday() + 1) % 7
+    day_name = days[day_idx]
+
+    hours = getattr(store, f"hours_{day_name}", None)
+    if not hours or hours.lower() == "closed":
+        return False
+
+    try:
+        # Expects format "09:00-21:00"
+        start_str, end_str = hours.split("-")
+        start = start_str.strip()
+        end = end_str.strip()
+
+        # Handle stores closing after midnight (e.g., 18:00-02:00)
+        if end < start:
+            return current_time_str >= start or current_time_str <= end
+
+        return start <= current_time_str <= end
+    except:
+        return False
+
+
+# --- 4. SEARCH LOGIC ---
 def search_stores_logic(
         db: Session,
         lat: Optional[float],
@@ -17,38 +72,45 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
-    # 1. Start with a broad query to prove data exists
-    query = db.query(models.Store)
+    # Base query: Get active stores
+    query = db.query(models.Store).filter(models.Store.status.ilike("active"))
 
-    # 2. Add Type Filter ONLY if it's explicitly chosen
     if store_type and store_type.strip() and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
 
     all_candidates = query.all()
+    if not all_candidates:
+        all_candidates = db.query(models.Store).all()
 
-    # 3. Handle Geocoding Failure OR Nationwide Request
-    # If lat/lon is None (Geocoder failed), we force it to show everything
     valid_stores = []
+    # Get current time once for comparison
+    current_time = datetime.now().strftime("%H:%M")
+
+    # Nationwide / Proximity Logic
     if lat is None or lon is None or radius_miles >= 5000:
-        valid_stores = all_candidates
-        for s in valid_stores:
+        for s in all_candidates:
+            # Still apply "Open Now" filter even in Nationwide mode if requested
+            if open_now and not is_store_open(s, current_time):
+                continue
             s.distance_miles = None
+            valid_stores.append(s)
     else:
-        # 4. Proximity Logic
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
+                if open_now and not is_store_open(store, current_time):
+                    continue
                 store.distance_miles = dist
                 valid_stores.append(store)
 
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 5. Pagination
+    # Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
-    # 6. Mapping (The Fix for serialize_store crash)
+    # Mapping
     results = []
     for s in paginated:
         results.append({
@@ -59,7 +121,8 @@ def search_stores_logic(
             "longitude": s.longitude,
             "distance": getattr(s, 'distance_miles', None),
             "store_type": s.store_type,
-            "hours_mon": s.hours_mon
+            "hours_mon": s.hours_mon,
+            "is_open": is_store_open(s, current_time)  # Added for frontend status
         })
 
     return {"results": results, "total": total, "page": page, "limit": limit}
@@ -70,21 +133,3 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
     return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-
-
-def get_lat_lon(query: str) -> Tuple[Optional[float], Optional[float]]:
-    # Use a unique agent to prevent blocking
-    geolocator = Nominatim(user_agent="my_retail_locator_final_v10")
-
-    try:
-        # Append USA to make sure it finds zip codes correctly
-        search_term = f"{query}, USA"
-        location = geolocator.geocode(search_term, timeout=10)
-
-        if location:
-            return location.latitude, location.longitude
-
-    except Exception as e:
-        print(f"GEOCODE ERROR: {e}")
-
-    return None, None
