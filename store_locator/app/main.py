@@ -16,7 +16,8 @@ import os
 from .database import engine, get_db
 from . import models, schemas
 from .config import settings
-from .services.search import search_stores_logic, redis_client, get_lat_lon
+# Updated Import: Removed redis_client since we switched to in-memory
+from .services.search import search_stores_logic, get_lat_lon
 from .auth_utils import (
     get_password_hash,
     verify_password,
@@ -59,7 +60,6 @@ def health_check():
 
 
 # --- 2. PUBLIC SEARCH ---
-# --- 2. PUBLIC SEARCH ---
 @app.post("/api/stores/search")
 @limiter.limit("100/minute")
 def search_stores(
@@ -68,25 +68,13 @@ def search_stores(
         db: Session = Depends(get_db)
 ):
     try:
-        # --- 1. UNCOMMENT THESE 3 LINES (Required for saving to Redis later) ---
-        payload_str = payload.model_dump_json()
-        query_hash = hashlib.md5(payload_str.encode()).hexdigest()
-        cache_key = f"search_results:{query_hash}"
-
-        # --- 2. Check Redis (Keep this commented out to force fresh data for now) ---
-        # if redis_client:
-        #     cached_data = redis_client.get(cache_key)
-        #     if cached_data:
-        #         return json.loads(cached_data)
-
-        # Geocode if needed
+        # 1. Geocoding (Logic inside get_lat_lon handles in-memory caching now)
         lat, lon = None, None
         search_query = payload.zip_code or payload.address
         if search_query:
             lat, lon = get_lat_lon(search_query)
 
-        # Search Logic
-        from app.services.search import search_stores_logic
+        # 2. Search Logic
         results = search_stores_logic(
             db=db,
             lat=lat,
@@ -99,15 +87,6 @@ def search_stores(
             open_now=payload.filters.open_now
         )
 
-        # --- THE FIX: Wrap Redis in try/except ---
-        # This prevents the app from crashing if Redis is down or misconfigured (localhost)
-        if redis_client and results:
-            try:
-                redis_client.setex(cache_key, 300, json.dumps(results, default=str))
-            except Exception as redis_error:
-                print(f"Redis Save Failed (Non-critical): {redis_error}")
-                # We simply continue and return the results anyway!
-
         return results
 
     except Exception as e:
@@ -116,13 +95,13 @@ def search_stores(
         print(traceback.format_exc())
         return {"error": str(e), "results": [], "total": 0, "page": 1, "limit": 10}
 
+
 # --- 3. AUTHENTICATION ---
 @app.post("/api/auth/login", response_model=schemas.Token)
 def login(form_data: schemas.TokenData, db: Session = Depends(get_db)):
-    # Note: Using simpler TokenData for JSON input instead of Form data
     user = db.query(models.User).filter(models.User.email == form_data.email).first()
+    # Note: In this project, we are using the 'role' field in TokenData as the password input
     if not user or not verify_password(form_data.role, user.password_hash):
-        # Note: In this project, we are using the 'role' field in TokenData as the password input for simplicity
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
     if not user.is_active:
@@ -131,7 +110,6 @@ def login(form_data: schemas.TokenData, db: Session = Depends(get_db)):
     access_token = create_access_token(data={"sub": user.email, "role": user.role.name, "user_id": user.id})
     refresh_token = create_refresh_token(data={"sub": user.email})
 
-    # Save Refresh Token
     db_token = models.RefreshToken(
         token_hash=get_password_hash(refresh_token),
         user_id=user.id
@@ -173,10 +151,7 @@ def create_store(
     if store.address_postal_code:
         lat, lon = get_lat_lon(store.address_postal_code)
 
-    # Process Services
     service_objs = process_services(db, store.services)
-
-    # Convert Pydantic model to Dict, exclude services (handled separately)
     store_data = store.model_dump(exclude={"services"})
 
     new_store = models.Store(
@@ -216,7 +191,6 @@ def update_store(
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    # Handle Services separately if present
     if "services" in update_data:
         store.services = process_services(db, update_data.pop("services"))
 
@@ -235,7 +209,7 @@ def delete_store(store_id: str, db: Session = Depends(get_db), current_user: mod
 
     store = db.query(models.Store).filter(models.Store.store_id == store_id).first()
     if store:
-        store.status = "inactive"  # Soft Delete
+        store.status = "inactive"
         db.commit()
     return
 
@@ -250,10 +224,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db),
     if db.query(models.User).filter(models.User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email registered")
 
-    # Resolve Role ID
     role_id = user.role_id
     if not role_id:
-        # Default to viewer if not specified
         viewer_role = db.query(models.Role).filter(models.Role.name == "viewer").first()
         role_id = viewer_role.id if viewer_role else None
 
