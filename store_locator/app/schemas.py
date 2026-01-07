@@ -6,7 +6,6 @@ from typing import List, Optional
 class SearchFilters(BaseModel):
     radius_miles: float = 10.0
     store_type: Optional[str] = None
-    services: Optional[List[str]] = None
     open_now: bool = False
 
 

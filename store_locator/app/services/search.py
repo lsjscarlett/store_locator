@@ -48,61 +48,50 @@ def search_stores_logic(
         lon: Optional[float],
         radius_miles: float,
         store_type: Optional[str],
-        services: Optional[List[str]],
         page: int,
         limit: int,
         open_now=False
 ):
-    # 1. Start with an active stores query
+    # 1. Start with an active stores query (No services join needed)
     query = db.query(models.Store).filter(models.Store.status == "active")
 
-    # 2. Filter by Store Type
-    if store_type and store_type.strip() != "":
-        query = query.filter(models.Store.store_type.ilike(store_type.strip()))
+    # 2. Filter by Store Type (if selected)
+    if store_type and store_type.strip():
+        query = query.filter(models.Store.store_type == store_type)
 
-    # 3. Filter by Services
-    if services and len(services) > 0:
-        for service_name in services:
-            query = query.filter(models.Store.services.any(name=service_name))
-
-    current_time = datetime.now().strftime("%H:%M")
     all_candidates = query.all()
+    current_time = datetime.now().strftime("%H:%M")
     valid_stores = []
 
-    # 4. Calculate Distance and Filter
+    # 3. Handle Distance and Open Now filtering
     if lat is not None and lon is not None:
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
-                # Check "Open Now" if requested
+                # Optional: Check "Open Now"
                 if open_now and not is_store_open(store, current_time):
                     continue
 
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # --- CRITICAL FIX: SORT BY DISTANCE ---
+        # --- CRITICAL: SORT BY PROXIMITY ---
         valid_stores.sort(key=lambda x: x.distance_miles)
     else:
-        # If no coordinates (e.g., search failed), just return original list
+        # Fallback: if geocoding fails, show stores but without distance
         valid_stores = all_candidates
         for s in valid_stores:
             s.distance_miles = None
 
-    # 5. Handle Pagination
+    # 4. Handle Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     end = start + limit
     paginated_results = valid_stores[start:end]
 
-    # 6. Map to Frontend format
+    # 5. Map to the clean Frontend format (removed services field)
     final_results = []
     for s in paginated_results:
-        # Handle services list to string mapping safely
-        service_names = []
-        if hasattr(s, 'services') and s.services:
-            service_names = [svc.name for svc in s.services] if isinstance(s.services, list) else []
-
         final_results.append({
             "store_id": s.store_id,
             "name": s.name,
@@ -113,7 +102,6 @@ def search_stores_logic(
             "distance": getattr(s, 'distance_miles', None),
             "store_type": s.store_type,
             "phone": getattr(s, 'phone', 'N/A'),
-            "services": "|".join(service_names),
             "hours_mon": s.hours_mon,
             "hours_tue": s.hours_tue,
             "hours_wed": s.hours_wed,
