@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional
 import csv
 import codecs
@@ -225,23 +226,32 @@ def delete_user(
     db.commit()  # Commits the change to the database
     return None
 
-from sqlalchemy import text
+
 @app.post("/api/admin/reset_db")
 def reset_db(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role.name != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # DELETE ALL USERS EXCEPT ID 1
+    # 1. DELETE everyone except Admin (ID 1)
+    # This works on ALL databases
     db.execute(text("DELETE FROM users WHERE id > 1"))
 
-    # RESET THE ID COUNTER (SQLite specific)
-    db.execute(text("UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"))
+    # 2. Reset the ID Counter (Database Specific)
+    # Check the database URL to see if we are on Postgres or SQLite
+    db_url = str(db.get_bind().url)
+
+    if "postgres" in db_url:
+        # PostgreSQL Command
+        db.execute(text("ALTER SEQUENCE users_id_seq RESTART WITH 2"))
+    else:
+        # SQLite Command
+        db.execute(text("UPDATE sqlite_sequence SET seq = 1 WHERE name = 'users'"))
 
     db.commit()
-    return {"message": "Database cleaned and IDs reset"}
+    return {"message": "Database cleaned and IDs reset to 2"}
 
 
 # --- 5. ADMIN: USER MANAGEMENT ---
