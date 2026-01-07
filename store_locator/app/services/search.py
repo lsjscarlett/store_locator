@@ -45,29 +45,18 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
-    # 1. Start Query - Only look for active stores
-    query = db.query(models.Store).filter(models.Store.status.ilike("active"))
+    # 1. TEMPORARY: Fetch EVERYTHING to prove DB connection is alive
+    # We ignore "active" and "store_type" filters for this test
+    all_candidates = db.query(models.Store).all()
 
-    # 2. Store Type Filter
-    if store_type and store_type.strip() and store_type.lower() != "all":
-        query = query.filter(models.Store.store_type.ilike(store_type.strip()))
-
-    # 3. SERVICES FILTER (THE KILLER FIX)
-    # If services is empty [], we MUST NOT filter by it or results will be 0
-    if services and len(services) > 0:
-        for svc_name in services:
-            query = query.filter(models.Store.services.any(models.Service.name.ilike(svc_name)))
-
-    all_candidates = query.all()
-
-    # Fallback: If for some reason 'active' filter returns nothing, get all stores
-    if not all_candidates:
-        all_candidates = db.query(models.Store).all()
+    # Log to Railway console so you can see if data is being pulled
+    print(f"FORCE LOG: Found {len(all_candidates)} stores in database.")
 
     valid_stores = []
     current_time = datetime.now().strftime("%H:%M")
 
-    # 4. Proximity & Nationwide Logic
+    # 2. Nationwide / Proximity Logic
+    # If radius is Nationwide (5000) or geocoding failed, skip distance checks
     if lat is None or lon is None or radius_miles >= 5000:
         valid_stores = all_candidates
         for s in valid_stores:
@@ -76,20 +65,17 @@ def search_stores_logic(
         for store in all_candidates:
             dist = calculate_distance(lat, lon, store.latitude, store.longitude)
             if dist <= radius_miles:
-                if open_now and not is_store_open(store, current_time):
-                    continue
+                # We skip "Open Now" for this test to ensure results show
                 store.distance_miles = dist
                 valid_stores.append(store)
 
-        # Sort closest first
         valid_stores.sort(key=lambda x: x.distance_miles if x.distance_miles is not None else 9999)
 
-    # 5. Pagination
+    # 3. Pagination
     total = len(valid_stores)
     start = (page - 1) * limit
     paginated = valid_stores[start: start + limit]
 
-    # 6. Response Mapping
     return {
         "results": [
             {

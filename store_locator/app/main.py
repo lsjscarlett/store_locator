@@ -73,11 +73,11 @@ def search_stores(
         query_hash = hashlib.md5(payload_str.encode()).hexdigest()
         cache_key = f"search_results:{query_hash}"
 
-        # Check Redis
-        if redis_client:
-            cached_data = redis_client.get(cache_key)
-            if cached_data:
-                return json.loads(cached_data)
+        # # Check Redis
+        # if redis_client:
+        #     cached_data = redis_client.get(cache_key)
+        #     if cached_data:
+        #         return json.loads(cached_data)
 
         # Geocode if needed
         lat, lon = None, None
