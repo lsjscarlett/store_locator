@@ -6,6 +6,7 @@ from typing import List, Optional
 class SearchFilters(BaseModel):
     radius_miles: float = 10.0
     store_type: Optional[str] = None
+    services: Optional[List[str]] = []
     open_now: bool = False
 
 
@@ -14,8 +15,7 @@ class StoreSearchRequest(BaseModel):
     zip_code: Optional[str] = None
     page: int = 1
     limit: int = 10
-    filters: SearchFilters = Field(default_factory=SearchFilters)
-
+    filters: SearchFilters
 
 # --- 2. Store Base & Validators ---
 class StoreBase(BaseModel):
