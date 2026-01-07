@@ -22,6 +22,7 @@ class Service(Base):
     __tablename__ = "services"
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True) # e.g., "wifi", "parking"
+    stores = relationship("Store", secondary="store_services", back_populates="services")
 
 
 # --- Store Model ---
