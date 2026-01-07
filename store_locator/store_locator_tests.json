@@ -1,129 +1,189 @@
 {
 	"info": {
-		"name": "Store Locator Final Tests",
+		"name": "Store Locator Ultimate Suite (Actions + Edge Cases)",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
-		{
-			"key": "base_url",
-			"value": "https://storelocatorbackend-production.up.railway.app",
-			"type": "string"
-		},
-		{
-			"key": "token",
-			"value": "",
-			"type": "string"
-		}
+		{ "key": "base_url", "value": "https://storelocatorbackend-production.up.railway.app", "type": "string" },
+		{ "key": "token", "value": "", "type": "string" },
+		{ "key": "refresh_token", "value": "", "type": "string" },
+		{ "key": "test_store_id", "value": "TEST_ULTIMATE_01", "type": "string" },
+		{ "key": "test_user_id", "value": "", "type": "string" },
+		{ "key": "viewer_token", "value": "", "type": "string" }
 	],
 	"item": [
 		{
-			"name": "1. Health Check",
+			"name": "1. System: Health Check",
+			"request": { "method": "GET", "url": "{{base_url}}/" },
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(200);"] } }]
+		},
+		{
+			"name": "2. System: Seed Admin",
+			"request": { "method": "GET", "url": "{{base_url}}/seed_admin" }
+		},
+		{
+			"name": "3. Auth: Login (Admin)",
+			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "pm.environment.set(\"token\", jsonData.access_token);", "pm.environment.set(\"refresh_token\", jsonData.refresh_token);", "pm.test(\"Got Token\", function () { pm.expect(jsonData.access_token).to.not.be.undefined; });"] } }],
 			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/",
-					"host": ["{{base_url}}"],
-					"path": [""]
-				}
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"admin@example.com\",\n    \"role\": \"admin123\"\n}" },
+				"url": "{{base_url}}/api/auth/login"
+			}
+		},
+		{
+			"name": "4. Auth: Refresh Token",
+			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "pm.environment.set(\"token\", jsonData.access_token);", "pm.test(\"Refreshed\", function () { pm.expect(jsonData.access_token).to.not.be.undefined; });"] } }],
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"refresh_token\": \"{{refresh_token}}\"\n}" },
+				"url": "{{base_url}}/api/auth/refresh"
+			}
+		},
+		{
+			"name": "5. Store: Create (Happy Path)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n  \"store_id\": \"{{test_store_id}}\",\n  \"name\": \"Ultimate Test Store\",\n  \"store_type\": \"regular\",\n  \"address_street\": \"123 Main St\",\n  \"address_city\": \"New York\",\n  \"address_state\": \"NY\",\n  \"address_postal_code\": \"10001\",\n  \"status\": \"active\",\n  \"services\": [\"wifi\"]\n}" },
+				"url": "{{base_url}}/api/admin/stores"
 			},
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
-					}
-				}
-			]
+			"event": [{ "listen": "test", "script": { "exec": ["pm.expect(pm.response.code).to.be.oneOf([201, 400]);"] } }]
 		},
 		{
-			"name": "2. Seed Admin User",
+			"name": "6. Store: Get Details",
+			"request": { "method": "GET", "header": [{"key": "Authorization","value": "Bearer {{token}}"}], "url": "{{base_url}}/api/admin/stores/{{test_store_id}}" },
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(200);", "pm.expect(pm.response.json().name).to.eql(\"Ultimate Test Store\");"] } }]
+		},
+		{
+			"name": "7. Store: Update (PATCH)",
+			"request": {
+				"method": "PATCH",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n  \"name\": \"Renamed Store\",\n  \"services\": [\"wifi\", \"optical\"]\n}" },
+				"url": "{{base_url}}/api/admin/stores/{{test_store_id}}"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(200);", "pm.expect(pm.response.json().name).to.eql(\"Renamed Store\");"] } }]
+		},
+		{
+			"name": "8. Store: Search (With Filter)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"zip_code\": \"10001\",\n    \"page\": 1,\n    \"limit\": 5,\n    \"filters\": {\"radius_miles\": 50, \"services\": [\"optical\"]}\n}" },
+				"url": "{{base_url}}/api/stores/search"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(200);", "pm.expect(pm.response.json().results[0].services).to.include(\"optical\");"] } }]
+		},
+		{
+			"name": "9. User: Create",
+			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "pm.environment.set(\"test_user_id\", jsonData.id);", "pm.response.to.have.status(200);"] } }],
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"edge_case_user@example.com\",\n    \"password\": \"pass123\",\n    \"role_id\": 2,\n    \"is_active\": true\n}" },
+				"url": "{{base_url}}/api/admin/users"
+			}
+		},
+		{
+			"name": "10. User: Update (PUT)",
+			"request": {
+				"method": "PUT",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"edge_case_user@example.com\",\n    \"role_id\": 1,\n    \"is_active\": false\n}" },
+				"url": "{{base_url}}/api/admin/users/{{test_user_id}}"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(200);", "pm.expect(pm.response.json().is_active).to.eql(false);"] } }]
+		},
+		{
+			"name": "11. Admin: Import Stores (Manual)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"}],
+				"body": { "mode": "formdata", "formdata": [{"key": "file", "type": "file", "description": "Select a CSV file"}] },
+				"url": "{{base_url}}/api/admin/stores/import"
+			}
+		},
+		{
+			"name": "--- EDGE CASES START HERE ---",
+			"request": { "method": "GET", "url": "{{base_url}}/" }
+		},
+		{
+			"name": "12. Edge: Duplicate Store ID (Should Fail)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n  \"store_id\": \"{{test_store_id}}\",\n  \"name\": \"Duplicate Attempt\",\n  \"store_type\": \"regular\",\n  \"address_street\": \"123 St\",\n  \"address_city\": \"City\",\n  \"address_state\": \"NY\",\n  \"address_postal_code\": \"10001\",\n  \"status\": \"active\"\n}" },
+				"url": "{{base_url}}/api/admin/stores"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.test(\"Status is 400\", function () { pm.response.to.have.status(400); });"] } }]
+		},
+		{
+			"name": "13. Edge: Invalid Search Data (Should Fail)",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"zip_code\": \"INVALID\",\n    \"page\": 1,\n    \"filters\": {\"radius_miles\": \"NOT_A_NUMBER\"}\n}" },
+				"url": "{{base_url}}/api/stores/search"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.test(\"Status is 422\", function () { pm.response.to.have.status(422); });"] } }]
+		},
+		{
+			"name": "14. Edge: Get Non-Existent Store (Should 404)",
 			"request": {
 				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/seed_admin",
-					"host": ["{{base_url}}"],
-					"path": ["seed_admin"]
-				}
-			}
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"}],
+				"url": "{{base_url}}/api/admin/stores/NON_EXISTENT_ID_999"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(404);"] } }]
 		},
 		{
-			"name": "3. Login (Get Token)",
-			"event": [
-				{
-					"listen": "test",
-					"script": {
-						"exec": [
-							"var jsonData = pm.response.json();",
-							"pm.environment.set(\"token\", jsonData.access_token);",
-							"pm.test(\"Got Access Token\", function () { pm.expect(jsonData.access_token).to.not.be.undefined; });"
-						]
-					}
-				}
-			],
+			"name": "15. Security: Login Failed (Bad Pass)",
 			"request": {
 				"method": "POST",
 				"header": [{"key": "Content-Type","value": "application/json"}],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"email\": \"admin@example.com\",\n    \"role\": \"admin123\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/auth/login",
-					"host": ["{{base_url}}"],
-					"path": ["api", "auth", "login"]
-				}
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"admin@example.com\",\n    \"role\": \"WRONG_PASS\"\n}" },
+				"url": "{{base_url}}/api/auth/login"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(400);"] } }]
+		},
+		{
+			"name": "16. Security: Prepare Viewer User",
+			"request": {
+				"method": "POST",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"},{"key": "Content-Type","value": "application/json"}],
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"viewer_attack@example.com\",\n    \"password\": \"pass123\",\n    \"role_id\": 3,\n    \"is_active\": true\n}" },
+				"url": "{{base_url}}/api/admin/users"
 			}
 		},
 		{
-			"name": "4. Search Stores (Public)",
+			"name": "17. Security: Login as Viewer",
+			"event": [{ "listen": "test", "script": { "exec": ["var jsonData = pm.response.json();", "if(jsonData.access_token) { pm.environment.set(\"viewer_token\", jsonData.access_token); }"] } }],
 			"request": {
 				"method": "POST",
 				"header": [{"key": "Content-Type","value": "application/json"}],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n    \"zip_code\": \"10036\",\n    \"page\": 1,\n    \"limit\": 5,\n    \"filters\": {\n        \"radius_miles\": 50,\n        \"store_type\": \"all\",\n        \"services\": [\"wifi\"]\n    }\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/stores/search",
-					"host": ["{{base_url}}"],
-					"path": ["api", "stores", "search"]
-				}
+				"body": { "mode": "raw", "raw": "{\n    \"email\": \"viewer_attack@example.com\",\n    \"role\": \"pass123\"\n}" },
+				"url": "{{base_url}}/api/auth/login"
 			}
 		},
 		{
-			"name": "5. Create Store (Admin)",
-			"request": {
-				"method": "POST",
-				"header": [
-					{"key": "Authorization","value": "Bearer {{token}}"},
-					{"key": "Content-Type","value": "application/json"}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"store_id\": \"POSTMAN_01\",\n  \"name\": \"Postman Test Store\",\n  \"store_type\": \"flagship\",\n  \"address_street\": \"350 Fifth Ave\",\n  \"address_city\": \"New York\",\n  \"address_state\": \"NY\",\n  \"address_postal_code\": \"10118\",\n  \"status\": \"active\",\n  \"services\": [\"wifi\", \"optical\"]\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/admin/stores",
-					"host": ["{{base_url}}"],
-					"path": ["api", "admin", "stores"]
-				}
-			}
-		},
-		{
-			"name": "6. Delete Store (Admin)",
+			"name": "18. Security: Viewer Try Delete (Should 403)",
 			"request": {
 				"method": "DELETE",
-				"header": [
-					{"key": "Authorization","value": "Bearer {{token}}"}
-				],
-				"url": {
-					"raw": "{{base_url}}/api/admin/stores/POSTMAN_01",
-					"host": ["{{base_url}}"],
-					"path": ["api", "admin", "stores", "POSTMAN_01"]
-				}
-			}
+				"header": [{"key": "Authorization","value": "Bearer {{viewer_token}}"}],
+				"url": "{{base_url}}/api/admin/stores/{{test_store_id}}"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(403);"] } }]
+		},
+		{
+			"name": "19. Store: Delete (Cleanup)",
+			"request": {
+				"method": "DELETE",
+				"header": [{"key": "Authorization","value": "Bearer {{token}}"}],
+				"url": "{{base_url}}/api/admin/stores/{{test_store_id}}"
+			},
+			"event": [{ "listen": "test", "script": { "exec": ["pm.response.to.have.status(204);"] } }]
 		}
 	]
 }
