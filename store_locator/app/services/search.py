@@ -112,9 +112,17 @@ def search_stores_logic(
         limit: int,
         open_now: bool = False
 ):
+
     query = db.query(models.Store)
+    # 1. Filter by Store Type
     if store_type and store_type.lower() != "all":
         query = query.filter(models.Store.store_type.ilike(store_type.strip()))
+
+    # 2. Filter by Services (NEW LOGIC)
+    if services and len(services) > 0:
+        for service_name in services:
+             # This checks if the store has *at least* this service
+            query = query.filter(models.Store.services.any(models.Service.name.ilike(service_name)))
 
     all_candidates = query.all()
     valid_stores = []
@@ -156,6 +164,7 @@ def search_stores_logic(
             "latitude": s.latitude,
             "longitude": s.longitude,
             "distance": getattr(s, 'distance_miles', None),
+            "services": [service.name for service in s.services],
 
             # FIELDS FOR FRONTEND
             "phone": s.phone,

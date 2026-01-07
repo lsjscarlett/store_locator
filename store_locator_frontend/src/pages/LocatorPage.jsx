@@ -28,6 +28,12 @@ let HoverIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Hardcoded list of common services found in your CSV
+const AVAILABLE_SERVICES = [
+    'pickup', 'optical', 'garden_center', 'returns',
+    'automotive', 'gift_wrapping', 'photo_printing', 'pharmacy'
+];
+
 const LocatorPage = () => {
     const [searchInput, setSearchInput] = useState('');
     const [stores, setStores] = useState([]);
@@ -42,13 +48,15 @@ const LocatorPage = () => {
     const [totalResults, setTotalResults] = useState(0);
     const [resultsPerPage] = useState(10);
 
-    const [selectedType, setSelectedType] = useState('');
+    // FILTERS
     const [selectedRadius, setSelectedRadius] = useState(10);
+    const [selectedType, setSelectedType] = useState('');
+    const [selectedServices, setSelectedServices] = useState([]); // Array of strings
     const [openNow, setOpenNow] = useState(false);
 
     useEffect(() => {
         if (stores.length === 0) performSearch(null, 1);
-    }, [selectedType, selectedRadius, openNow, currentPage]);
+    }, [selectedRadius, selectedType, selectedServices, openNow, currentPage]);
 
     const performSearch = async (e, page = 1) => {
         if (e) e.preventDefault();
@@ -63,6 +71,7 @@ const LocatorPage = () => {
                 filters: {
                     radius_miles: parseFloat(selectedRadius),
                     store_type: selectedType || null,
+                    services: selectedServices.length > 0 ? selectedServices : null,
                     open_now: openNow
                 }
             });
@@ -74,18 +83,28 @@ const LocatorPage = () => {
                 setCenter([response.data.results[0].latitude, response.data.results[0].longitude]);
                 setZoom(13);
             } else if (response.data.results.length === 0) {
-                // --- THE FIX: SMART HINTING ---
                 if (searchInput && !searchInput.match(/\d{5}/) && !searchInput.includes(',')) {
-                    setError("Address too vague. Try adding a City or Zip Code (e.g., 'Elm St, Jersey City').");
+                    setError("Address too vague. Try adding a City or Zip Code.");
                 } else {
                     setError("No stores found matching your criteria.");
                 }
             }
         } catch (err) {
-            setError("Search failed. Please try again.");
+            setError("Search failed.");
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleServiceToggle = (service) => {
+        setSelectedServices(prev => {
+            if (prev.includes(service)) {
+                return prev.filter(s => s !== service);
+            } else {
+                return [...prev, service];
+            }
+        });
+        setCurrentPage(1); // Reset to page 1 on filter change
     };
 
     const getHoursDisplay = (store) => {
@@ -99,6 +118,7 @@ const LocatorPage = () => {
 
     return (
         <div className="flex flex-col h-screen text-black bg-white font-sans">
+            {/* HEADER */}
             <header className="p-4 border-b shadow-sm z-[1001] bg-white">
                 <div className="max-w-6xl mx-auto flex flex-col gap-4">
                     <div className="flex justify-between items-center">
@@ -116,7 +136,6 @@ const LocatorPage = () => {
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
                                 className="border p-2 rounded text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-gray-50"
-                                // UPDATED PLACEHOLDER
                                 placeholder="e.g. 198 Elm St, Jersey City OR 07305"
                             />
                         </div>
@@ -128,8 +147,12 @@ const LocatorPage = () => {
             </header>
 
             <div className="flex flex-1 overflow-hidden">
+                {/* SIDEBAR */}
                 <div className="w-1/3 overflow-y-auto p-4 bg-gray-50 border-r flex flex-col">
+
+                    {/* FILTERS CARD */}
                     <div className="mb-4 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                        {/* Row 1: Radius & Type */}
                         <div className="grid grid-cols-2 gap-3 mb-4">
                             <div>
                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Radius</label>
@@ -151,19 +174,41 @@ const LocatorPage = () => {
                                 </select>
                             </div>
                         </div>
-                        <label className="flex items-center gap-2 cursor-pointer">
+
+                        {/* Row 2: Services Filter */}
+                        <div className="mb-4">
+                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-2">Filter Services</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {AVAILABLE_SERVICES.map(service => (
+                                    <label key={service} className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedServices.includes(service)}
+                                            onChange={() => handleServiceToggle(service)}
+                                            className="w-3 h-3 accent-blue-600 rounded"
+                                        />
+                                        <span className="text-[10px] text-gray-600 capitalize">
+                                            {service.replace(/_/g, ' ')}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Row 3: Open Now */}
+                        <label className="flex items-center gap-2 cursor-pointer border-t pt-3">
                             <input type="checkbox" checked={openNow} onChange={(e) => { setOpenNow(e.target.checked); setCurrentPage(1); }} className="w-4 h-4 accent-blue-600" />
                             <span className="text-[10px] font-bold text-gray-600 uppercase">Open Now</span>
                         </label>
                     </div>
 
-                    {/* ERROR MESSAGE DISPLAY */}
                     {error && (
                         <div className="bg-red-50 border-l-4 border-red-500 p-3 mb-4 rounded shadow-sm">
                             <p className="text-red-700 text-xs font-bold">{error}</p>
                         </div>
                     )}
 
+                    {/* LIST OF STORES */}
                     <div className="flex-1">
                         {stores.map(store => (
                             <div
@@ -187,6 +232,17 @@ const LocatorPage = () => {
                                     {store.address_street}<br/>
                                     {store.address_city}, {store.address_state} {store.address_postal_code}
                                 </p>
+
+                                {/* SERVICE BADGES */}
+                                {store.services && store.services.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {store.services.map((svc, idx) => (
+                                            <span key={idx} className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 capitalize">
+                                                {svc.replace(/_/g, ' ')}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
 
                                 <div className="mt-2 pt-2 border-t border-gray-100 grid grid-cols-2 gap-2">
                                     <div className="text-[10px] text-gray-600">
@@ -218,6 +274,7 @@ const LocatorPage = () => {
                     )}
                 </div>
 
+                {/* MAP */}
                 <div className="flex-1 relative z-10">
                     <MapContainer center={center} zoom={zoom} style={{ height: '100%', width: '100%' }}>
                         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
